@@ -10,7 +10,8 @@
 
 T3 Code is a minimal web GUI for using coding agents like Codex and Claude.
 
-This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
+Keep changes scoped to the requested behavior. Propose broader architectural
+changes separately when the task reveals a need for them.
 
 ## Core Priorities
 
@@ -22,7 +23,9 @@ If a tradeoff is required, choose correctness and robustness over short-term con
 
 ## Maintainability
 
-Long term maintainability is a core priority. If you add new functionality, first check if there is shared logic that can be extracted to a separate module. Duplicate logic across multiple files is a code smell and should be avoided. Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem.
+Reuse existing shared logic when it fits. Extract a shared module when the
+change introduces meaningful duplication; avoid speculative abstractions and
+unrelated refactors.
 
 ## Package Roles
 
