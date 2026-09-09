@@ -36,8 +36,6 @@ I like ambitious ideas, simple systems, and software that feels obvious. Do not 
 
 Channel both "measure twice, cut once" and "yagni". Fight scope creep. Try to honor the dev's intent in both a minimal and realistic fashion.
 
-Keep changes scoped to the requested behavior. Propose broader architectural changes separately when the task reveals a need for them. Reuse existing shared logic when it fits; extract a shared module when the change introduces meaningful duplication. Avoid speculative abstractions and unrelated refactors.
-
 The rest of this document is meant to help you navigate the codebase and make changes effectively. Think of these instructions less as "hard rules", more as "good defaults". The developer's preferences should be able to override anything here.
 
 Of note: Most T3 Code contributions will come from T3 Code itself, often controlled remotely. This means you should be careful about accessing data, killing dev servers, and other things that may damage the T3 Code instance that the contributor is using.
