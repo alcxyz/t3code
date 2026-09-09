@@ -2118,35 +2118,6 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        {supportsAutomaticThreadTitles ? (
-          <SettingsRow
-            serverScoped
-            {...searchableSetting("automatic-thread-titles")}
-            description="Agents update titles only when the objective meaningfully changes. This does not run on a schedule, and manually renamed titles stay unchanged."
-            resetAction={
-              settings.automaticThreadTitles !== DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles ? (
-                <SettingResetButton
-                  label="automatic thread titles"
-                  onClick={() =>
-                    updateSettings({
-                      automaticThreadTitles: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.automaticThreadTitles}
-                onCheckedChange={(checked) =>
-                  updateSettings({ automaticThreadTitles: Boolean(checked) })
-                }
-                aria-label="Keep thread titles up to date"
-              />
-            }
-          />
-        ) : null}
-
         {supportsAutoSettlement ? (
           <>
             <SettingsRow
@@ -2567,6 +2538,35 @@ export function GeneralSettingsPanel() {
             </Button>
           }
         />
+
+        {supportsAutomaticThreadTitles ? (
+          <SettingsRow
+            serverScoped
+            {...searchableSetting("automatic-thread-titles")}
+            description="Agents update titles only when the objective meaningfully changes. This does not run on a schedule, and manually renamed titles stay unchanged."
+            resetAction={
+              settings.automaticThreadTitles !== DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles ? (
+                <SettingResetButton
+                  label="automatic thread titles"
+                  onClick={() =>
+                    updateSettings({
+                      automaticThreadTitles: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.automaticThreadTitles}
+                onCheckedChange={(checked) =>
+                  updateSettings({ automaticThreadTitles: Boolean(checked) })
+                }
+                aria-label="Keep thread titles up to date"
+              />
+            }
+          />
+        ) : null}
 
         <SettingsRow
           serverScoped

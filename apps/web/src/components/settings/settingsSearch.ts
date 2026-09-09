@@ -168,7 +168,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "automatic-thread-titles",
     title: "Keep thread titles up to date",
     to: "/settings/general",
-    searchTerms: ["agent automatic regenerate rename objective"],
+    searchTerms: ["agent automatic regenerate rename objective projects threads"],
     requiresAutomaticThreadTitles: true,
   },
   {
