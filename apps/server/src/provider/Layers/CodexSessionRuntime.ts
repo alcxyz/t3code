@@ -178,6 +178,8 @@ export interface CodexSessionRuntimeSendTurnInput {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined;
   readonly interactionMode?: ProviderInteractionMode;
+  readonly currentThreadTitle?: string;
+  readonly browserToolsAvailable?: boolean;
 }
 
 export interface CodexThreadTurnSnapshot {
@@ -570,6 +572,7 @@ function buildCodexCollaborationMode(input: {
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly browserToolsAvailable?: boolean;
+  readonly currentThreadTitle?: string;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
     return undefined;
@@ -583,7 +586,11 @@ function buildCodexCollaborationMode(input: {
       reasoning_effort: reasoningEffort,
       developer_instructions: buildCodexDeveloperInstructions(
         input.interactionMode,
-        { model, reasoningEffort },
+        {
+          model,
+          reasoningEffort,
+          ...(input.currentThreadTitle ? { currentThreadTitle: input.currentThreadTitle } : {}),
+        },
         input.browserToolsAvailable ?? true,
       ),
     },
@@ -604,6 +611,7 @@ export function buildTurnStartParams(input: {
   readonly interactionMode?: ProviderInteractionMode;
   /** Defaults to true so callers that predate the agent-access gate are unchanged. */
   readonly browserToolsAvailable?: boolean;
+  readonly currentThreadTitle?: string;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
@@ -625,6 +633,7 @@ export function buildTurnStartParams(input: {
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
     browserToolsAvailable: input.browserToolsAvailable ?? true,
+    ...(input.currentThreadTitle ? { currentThreadTitle: input.currentThreadTitle } : {}),
   });
 
   return decodeCodexTurnStartParamsWithCollaborationMode({
@@ -2352,7 +2361,9 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            browserToolsAvailable:
+              input.browserToolsAvailable ?? hasConfiguredMcpServer(options.appServerArgs),
+            ...(input.currentThreadTitle ? { currentThreadTitle: input.currentThreadTitle } : {}),
           });
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

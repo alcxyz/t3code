@@ -28,6 +28,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { ThreadTitleToolkitHandlersLive } from "./toolkits/threadTitle/handlers.ts";
+import { ThreadTitleToolkit } from "./toolkits/threadTitle/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -444,4 +446,11 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+export const ThreadTitleToolkitRegistrationLive = McpServer.toolkit(ThreadTitleToolkit).pipe(
+  Layer.provide(ThreadTitleToolkitHandlersLive),
+);
+
+export const layer = Layer.mergeAll(
+  PreviewToolkitRegistrationLive,
+  ThreadTitleToolkitRegistrationLive,
+).pipe(Layer.provideMerge(McpTransportLive));

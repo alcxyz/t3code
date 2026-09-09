@@ -61,6 +61,7 @@ import Migration0046 from "./Migrations/046_RepairAutomaticSettlementTimestamps.
 import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
 import Migration0048 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
 import Migration0049 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
+import ForkProjectionThreadTitleSource from "./Migrations/ForkProjectionThreadTitleSource.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -159,6 +160,14 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
+  // Fork-owned schema must not claim a numbered migration: upstream owns that
+  // sequence, and the Effect migrator skips every id at or below its high-water
+  // mark. Keep extensions idempotent and outside the shared migration ledger so
+  // switching between upstream and this build cannot suppress a later upstream
+  // migration with the same id.
+  if (toMigrationInclusive === undefined) {
+    yield* ForkProjectionThreadTitleSource;
+  }
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0
     ? Effect.logDebug("Database schema is current")

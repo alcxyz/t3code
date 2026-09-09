@@ -505,6 +505,7 @@ describe("ProviderCommandReactor", () => {
         threadId: ThreadId.make("thread-1"),
         projectId: asProjectId("project-1"),
         title: "Thread",
+        titleSource: "automatic",
         modelSelection: modelSelection,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -538,6 +539,7 @@ describe("ProviderCommandReactor", () => {
           threadId: ThreadId.make("thread-2"),
           projectId: asProjectId("project-1"),
           title: "Thread 2",
+          titleSource: "automatic",
           modelSelection: modelSelection,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           runtimeMode: "approval-required",
@@ -1407,6 +1409,7 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-thread-title-seed"),
         threadId: ThreadId.make("thread-1"),
         title: seededTitle,
+        titleSource: "automatic",
       }),
     );
 
@@ -1443,6 +1446,7 @@ describe("ProviderCommandReactor", () => {
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.title).toBe("Generated title");
+    expect(thread?.titleSource).toBe("automatic");
     expect(attempts).toBe(2);
   });
 
@@ -1522,6 +1526,7 @@ describe("ProviderCommandReactor", () => {
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.title).toBe("Resolve stale reconnect state");
+    expect(thread?.titleSource).toBe("automatic");
     expect(thread?.titleRegeneration).toBeNull();
   });
 
@@ -2171,6 +2176,7 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-thread-title-formatted-seed"),
         threadId: ThreadId.make("thread-1"),
         title: seededTitle,
+        titleSource: "automatic",
       }),
     );
 

@@ -988,7 +988,10 @@ const make = Effect.gen(function* () {
 
         const thread = yield* resolveThreadShell(input.threadId);
         if (!thread) return;
-        if (!canReplaceThreadTitle(thread.title, input.titleSeed)) {
+        if (
+          thread.titleSource !== "automatic" ||
+          !canReplaceThreadTitle(thread.title, input.titleSeed)
+        ) {
           return;
         }
 
@@ -997,6 +1000,7 @@ const make = Effect.gen(function* () {
           commandId: yield* serverCommandId("thread-title-rename"),
           threadId: input.threadId,
           title: generated.title,
+          titleSource: "automatic",
         });
       }).pipe(
         Effect.catchCause((cause) =>
@@ -1047,7 +1051,7 @@ const make = Effect.gen(function* () {
       ...(attachments.length > 0 ? { attachments } : {}),
       modelSelection,
     });
-    if (generated.title === DEFAULT_THREAD_TITLE || generated.title === previousTitle) {
+    if (generated.title === DEFAULT_THREAD_TITLE) {
       return { _tag: "Completed", title: undefined } as const;
     }
 
@@ -1321,7 +1325,10 @@ const make = Effect.gen(function* () {
         ...generationInput,
       }).pipe(Effect.forkScoped);
 
-      if (canReplaceThreadTitle(thread.title, event.payload.titleSeed)) {
+      if (
+        thread.titleSource === "automatic" &&
+        canReplaceThreadTitle(thread.title, event.payload.titleSeed)
+      ) {
         yield* maybeGenerateThreadTitleForFirstTurn({
           threadId: event.payload.threadId,
           cwd: generationCwd,

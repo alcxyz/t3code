@@ -579,7 +579,7 @@ function GeneralSettingsSection() {
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
-      <AutoSettleSettingsRows />
+      <SharedThreadSettingsRows />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
     </SettingsSection>
   );
@@ -588,12 +588,12 @@ function GeneralSettingsSection() {
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_SERVER_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
 
 /**
- * Auto-settlement is a user preference that every server has to hold. Mobile
- * has no primary environment, so the first eligible sync target provides the
- * reference value. Edits fan out to every eligible target, and a mismatch row
- * lets the user push the reference out.
+ * These user preferences must be available to every server that can act on
+ * them. Mobile has no primary environment, so the first eligible sync target
+ * provides the reference value. Edits fan out to every eligible target, and a
+ * mismatch row lets the user push the reference out.
  */
-function AutoSettleSettingsRows() {
+function SharedThreadSettingsRows() {
   const { environments } = useEnvironments();
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: "server settings update",
@@ -603,6 +603,11 @@ function AutoSettleSettingsRows() {
   const syncTargets = environments.filter(supportsSharedSettingsSync);
   const reference = syncTargets[0] ?? null;
   const referenceSettings = reference?.serverConfig?.settings ?? null;
+  const titleTargets = syncTargets.filter(
+    (environment) =>
+      environment.serverConfig?.environment.capabilities.automaticThreadTitles === true,
+  );
+  const titleReferenceSettings = titleTargets[0]?.serverConfig?.settings ?? null;
 
   const [daysDraft, setDaysDraft] = useState<string | null>(null);
 
@@ -648,6 +653,22 @@ function AutoSettleSettingsRows() {
 
   return (
     <>
+      {titleReferenceSettings ? (
+        <SettingsSwitchRow
+          icon="textformat.size"
+          label="Keep thread titles up to date"
+          subtitle="Agents update titles only for meaningful objective changes, never on a schedule. Manually renamed titles stay unchanged."
+          value={titleReferenceSettings.automaticThreadTitles}
+          onValueChange={(value) => {
+            for (const environment of titleTargets) {
+              void updateSettings({
+                environmentId: environment.environmentId,
+                input: { patch: { automaticThreadTitles: value } },
+              });
+            }
+          }}
+        />
+      ) : null}
       <SettingsSwitchRow
         icon="arrow.triangle.branch"
         label="Auto-settle merged threads"

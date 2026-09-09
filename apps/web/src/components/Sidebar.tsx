@@ -2903,7 +2903,7 @@ export default function Sidebar() {
         if (trimmed === originalTitle) return;
         const result = await updateThreadMetadata({
           environmentId: threadRef.environmentId,
-          input: { threadId: threadRef.threadId, title: trimmed },
+          input: { threadId: threadRef.threadId, title: trimmed, titleSource: "user" },
         });
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);

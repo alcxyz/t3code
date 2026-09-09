@@ -2102,6 +2102,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         input: {
           threadId: threadRef.threadId,
           title: trimmed,
+          titleSource: "user",
         },
       });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {

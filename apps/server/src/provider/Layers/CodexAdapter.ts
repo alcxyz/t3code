@@ -2536,6 +2536,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           : {}),
         ...(serviceTier ? { serviceTier } : {}),
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
+        ...(input.runtimeInstructions?.currentThreadTitle
+          ? { currentThreadTitle: input.runtimeInstructions.currentThreadTitle }
+          : {}),
+        ...(input.runtimeInstructions
+          ? { browserToolsAvailable: input.runtimeInstructions.browserToolsAvailable }
+          : {}),
         ...(codexAttachments.length > 0 ? { attachments: codexAttachments } : {}),
       })
       .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/start", cause)));

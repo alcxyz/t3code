@@ -200,7 +200,7 @@ export const ChatHeader = memo(function ChatHeader({
       if (resolution.action === "noop") return;
       void updateThreadMetadata({
         environmentId: activeThreadEnvironmentId,
-        input: { threadId: activeThreadId, title: resolution.title },
+        input: { threadId: activeThreadId, title: resolution.title, titleSource: "user" },
       }).then((result) => {
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);

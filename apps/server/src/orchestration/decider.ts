@@ -373,6 +373,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           projectId: command.projectId,
           title: command.title,
+          ...(command.titleSource !== undefined ? { titleSource: command.titleSource } : {}),
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
@@ -876,6 +877,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const titleSource = command.titleSource ?? "user";
+      if (
+        command.title !== undefined &&
+        titleSource === "automatic" &&
+        (thread.archivedAt !== null || thread.deletedAt !== null)
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} is not active`,
+        });
+      }
+      if (
+        command.title !== undefined &&
+        titleSource === "automatic" &&
+        thread.titleSource !== "automatic"
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} has a user-owned title`,
+        });
+      }
+      const titleChanged =
+        command.title !== undefined &&
+        (command.title !== thread.title || titleSource !== thread.titleSource);
       const branch =
         command.branch !== undefined &&
         command.expectedBranch !== undefined &&
@@ -883,6 +908,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ? thread.branch
           : command.branch;
       const occurredAt = yield* nowIso;
+      const titleOnlyNoop =
+        command.title !== undefined &&
+        !titleChanged &&
+        command.regenerateTitle !== true &&
+        command.modelSelection === undefined &&
+        command.branch === undefined &&
+        command.worktreePath === undefined &&
+        command.linkedPullRequest === undefined;
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -893,7 +926,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.meta-updated",
         payload: {
           threadId: command.threadId,
-          ...(command.title !== undefined ? { title: command.title } : {}),
+          ...(command.title !== undefined && titleChanged
+            ? { title: command.title, titleSource }
+            : {}),
           ...(command.regenerateTitle === true
             ? {
                 regenerateTitle: true as const,
@@ -915,7 +950,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.linkedPullRequest !== undefined
             ? { linkedPullRequest: command.linkedPullRequest }
             : {}),
-          updatedAt: occurredAt,
+          updatedAt: titleOnlyNoop ? thread.updatedAt : occurredAt,
         },
       };
     }
@@ -995,7 +1030,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.meta-updated",
         payload: {
           threadId: command.threadId,
-          ...(requestIsCurrent && command.title !== undefined ? { title: command.title } : {}),
+          ...(requestIsCurrent && command.title !== undefined
+            ? { title: command.title, titleSource: "automatic" as const }
+            : {}),
           ...(requestIsCurrent ? { titleRegeneration: null } : {}),
           updatedAt: requestIsCurrent ? occurredAt : thread.updatedAt,
         },

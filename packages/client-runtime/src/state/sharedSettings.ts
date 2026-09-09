@@ -22,6 +22,7 @@ import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 
 /** Server keys that hold a user preference rather than machine config. */
 const SHARED_SERVER_SETTING_KEYS = [
+  "automaticThreadTitles",
   "continueThreadsAfterServerUpdate",
   "sidebarAutoSettleAfterDays",
   "sidebarAutoSettleOnMerge",
@@ -31,6 +32,11 @@ const SHARED_SERVER_SETTING_KEYS = [
 ] as const satisfies ReadonlyArray<keyof ServerSettings & keyof ServerSettingsPatch>;
 
 export type SharedServerSettingKey = (typeof SHARED_SERVER_SETTING_KEYS)[number];
+
+type SharedSettingsCapabilities = Pick<
+  ExecutionEnvironmentCapabilities,
+  "automaticThreadTitles" | "threadRestartContinuation"
+>;
 
 const SHARED_KEY_SET = new Set<string>(SHARED_SERVER_SETTING_KEYS);
 
@@ -57,7 +63,7 @@ export function splitSharedServerPatch(patch: ServerSettingsPatch): {
 /** Filter unsupported preferences; direct model writes retain the server's fallback behavior. */
 export function filterSharedServerPatch(
   patch: ServerSettingsPatch,
-  capabilities: Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation"> | undefined,
+  capabilities: SharedSettingsCapabilities | undefined,
   settings?: ServerSettings,
   sourceSettings = settings,
   targetIsSource = false,
@@ -79,15 +85,19 @@ export function filterSharedServerPatch(
   ) {
     patch = Struct.omit(patch, ["textGenerationModelSelection"]);
   }
-  return capabilities?.threadRestartContinuation === true
-    ? patch
-    : Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
+  if (capabilities?.automaticThreadTitles !== true) {
+    patch = Struct.omit(patch, ["automaticThreadTitles"]);
+  }
+  if (capabilities?.threadRestartContinuation !== true) {
+    patch = Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
+  }
+  return patch;
 }
 
 /** The shared subset supported by one environment. */
 export function pickSharedServerSettings(
   settings: ServerSettings,
-  capabilities?: Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation">,
+  capabilities?: SharedSettingsCapabilities,
 ): ServerSettingsPatch {
   return filterSharedServerPatch(
     Struct.pick(settings, SHARED_SERVER_SETTING_KEYS),
@@ -119,9 +129,7 @@ export interface SharedSettingsEnvironment {
   readonly label: string;
   readonly syncEligible: boolean;
   readonly settings: ServerSettings | null;
-  readonly capabilities?:
-    | Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation">
-    | undefined;
+  readonly capabilities?: SharedSettingsCapabilities | undefined;
 }
 
 /**

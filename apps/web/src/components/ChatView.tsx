@@ -6926,18 +6926,17 @@ export default function ChatView(props: ChatViewProps) {
     );
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
-    // Auto-title from first message
-    if (isFirstMessage && isServerThread) {
-      const titleResult = await updateThreadMetadata({
+    // This cosmetic seed is best-effort: a concurrent manual rename must not
+    // prevent the user's first message from being sent.
+    if (isFirstMessage && isServerThread && activeThread.titleSource === "automatic") {
+      await updateThreadMetadata({
         environmentId,
         input: {
           threadId: threadIdForSend,
           title,
+          titleSource: "automatic",
         },
       });
-      if (titleResult._tag === "Failure") {
-        failure = titleResult;
-      }
     }
 
     if (failure === null && isServerThread) {
@@ -6978,6 +6977,7 @@ export default function ChatView(props: ChatViewProps) {
                     createThread: {
                       projectId: activeProject.id,
                       title,
+                      titleSource: "automatic" as const,
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode: sendInteractionMode,
@@ -7617,6 +7617,7 @@ export default function ChatView(props: ChatViewProps) {
         threadId: nextThreadId,
         projectId: activeProject.id,
         title: nextThreadTitle,
+        titleSource: "automatic",
         modelSelection: nextThreadModelSelection,
         runtimeMode,
         interactionMode: "default",

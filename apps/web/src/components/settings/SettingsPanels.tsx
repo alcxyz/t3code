@@ -523,6 +523,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
+      ...(settings.automaticThreadTitles !== DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles
+        ? ["Keep thread titles up to date"]
+        : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
@@ -626,6 +629,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
+      settings.automaticThreadTitles,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
@@ -714,6 +718,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+      automaticThreadTitles: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
@@ -2017,8 +2022,9 @@ export function GeneralSettingsPanel() {
   );
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
-  const supportsAutoSettlement =
-    useAtomValue(primaryServerConfigAtom)?.environment.capabilities.threadAutoSettlement === true;
+  const primaryCapabilities = useAtomValue(primaryServerConfigAtom)?.environment.capabilities;
+  const supportsAutoSettlement = primaryCapabilities?.threadAutoSettlement === true;
+  const supportsAutomaticThreadTitles = primaryCapabilities?.automaticThreadTitles === true;
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -2111,6 +2117,35 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+
+        {supportsAutomaticThreadTitles ? (
+          <SettingsRow
+            serverScoped
+            {...searchableSetting("automatic-thread-titles")}
+            description="Agents update titles only when the objective meaningfully changes. This does not run on a schedule, and manually renamed titles stay unchanged."
+            resetAction={
+              settings.automaticThreadTitles !== DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles ? (
+                <SettingResetButton
+                  label="automatic thread titles"
+                  onClick={() =>
+                    updateSettings({
+                      automaticThreadTitles: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.automaticThreadTitles}
+                onCheckedChange={(checked) =>
+                  updateSettings({ automaticThreadTitles: Boolean(checked) })
+                }
+                aria-label="Keep thread titles up to date"
+              />
+            }
+          />
+        ) : null}
 
         {supportsAutoSettlement ? (
           <>

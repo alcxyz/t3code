@@ -14,6 +14,7 @@ import * as McpProviderSession from "./McpProviderSession.ts";
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly capabilities?: ReadonlyArray<McpInvocationContext.McpCapability>;
 }
 
 export interface McpIssuedCredential {
@@ -31,6 +32,10 @@ export interface McpSessionRegistryShape {
    * credential even when it goes a long time without touching an MCP tool.
    */
   readonly touch: (threadId: ThreadId) => Effect.Effect<void>;
+  readonly updateThreadCapabilities: (
+    threadId: ThreadId,
+    capabilities: ReadonlyArray<McpInvocationContext.McpCapability>,
+  ) => Effect.Effect<void>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   readonly revokeThread: (threadId: ThreadId) => Effect.Effect<void>;
   readonly revokeAll: Effect.Effect<void>;
@@ -128,7 +133,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
-        capabilities: new Set(["preview"]),
+        capabilities: new Set(request.capabilities ?? ["preview"]),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -190,6 +195,22 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     issue,
     resolve,
     touch,
+    updateThreadCapabilities: Effect.fn("McpSessionRegistry.updateThreadCapabilities")(
+      function* (threadId, capabilities) {
+        yield* SynchronizedRef.update(state, ({ records }) => {
+          const next = new Map(records);
+          for (const [tokenHash, record] of records) {
+            if (record.scope.threadId === threadId) {
+              next.set(tokenHash, {
+                ...record,
+                scope: { ...record.scope, capabilities: new Set(capabilities) },
+              });
+            }
+          }
+          return { records: next };
+        });
+      },
+    ),
     revokeProviderSession: Effect.fn("McpSessionRegistry.revokeProviderSession")(
       function* (providerSessionId) {
         yield* revokeWhere((record) => record.scope.providerSessionId === providerSessionId);
@@ -237,6 +258,14 @@ export const issueActiveMcpCredential = (
  */
 export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.touch(threadId) : Effect.void;
+
+export const updateActiveMcpThreadCapabilities = (
+  threadId: ThreadId,
+  capabilities: ReadonlyArray<McpInvocationContext.McpCapability>,
+): Effect.Effect<void> =>
+  activeMcpSessionRegistry
+    ? activeMcpSessionRegistry.updateThreadCapabilities(threadId, capabilities)
+    : Effect.void;
 
 export const revokeActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.revokeThread(threadId) : Effect.void;

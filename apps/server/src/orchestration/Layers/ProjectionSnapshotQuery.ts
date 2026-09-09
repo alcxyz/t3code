@@ -132,6 +132,7 @@ const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession;
 const ProjectionThreadRuntimeContextDbRowSchema = Schema.Struct({
   id: ThreadId,
   title: Schema.String,
+  titleSource: ProjectionThread.fields.titleSource,
   session: Schema.NullOr(ProjectionThreadSessionDbRowSchema),
 });
 const ProjectionCheckpointDbRowSchema = ProjectionCheckpoint.mapFields(
@@ -495,6 +496,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           thread_id AS "threadId",
           project_id AS "projectId",
           title,
+          title_source AS "titleSource",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -535,6 +537,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           thread_id AS "threadId",
           project_id AS "projectId",
           title,
+          title_source AS "titleSource",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -577,6 +580,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           thread_id AS "threadId",
           project_id AS "projectId",
           title,
+          title_source AS "titleSource",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -1068,6 +1072,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           thread_id AS "threadId",
           project_id AS "projectId",
           title,
+          title_source AS "titleSource",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -1110,6 +1115,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           threads.thread_id AS id,
           threads.title,
+          threads.title_source AS "titleSource",
           sessions.thread_id AS "threadId",
           sessions.status,
           sessions.provider_name AS "providerName",
@@ -1130,6 +1136,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           rows.map((row) => ({
             id: row.id,
             title: row.title,
+            titleSource: row.titleSource,
             session: row.threadId === null ? null : row,
           })),
         ),
@@ -2066,6 +2073,9 @@ pending_approval_requests AS (
                 id: row.threadId,
                 projectId: row.projectId,
                 title: row.title,
+                ...(row.titleSource === null || row.titleSource === undefined
+                  ? {}
+                  : { titleSource: row.titleSource }),
                 modelSelection: row.modelSelection,
                 runtimeMode: row.runtimeMode,
                 interactionMode: row.interactionMode,
@@ -2281,6 +2291,9 @@ pending_approval_requests AS (
                   id: row.threadId,
                   projectId: row.projectId,
                   title: row.title,
+                  ...(row.titleSource === null || row.titleSource === undefined
+                    ? {}
+                    : { titleSource: row.titleSource }),
                   modelSelection: row.modelSelection,
                   runtimeMode: row.runtimeMode,
                   interactionMode: row.interactionMode,
@@ -2423,6 +2436,9 @@ pending_approval_requests AS (
                       id: row.threadId,
                       projectId: row.projectId,
                       title: row.title,
+                      ...(row.titleSource === null || row.titleSource === undefined
+                        ? {}
+                        : { titleSource: row.titleSource }),
                       modelSelection: row.modelSelection,
                       runtimeMode: row.runtimeMode,
                       interactionMode: row.interactionMode,
@@ -2573,6 +2589,9 @@ pending_approval_requests AS (
                 id: row.threadId,
                 projectId: row.projectId,
                 title: row.title,
+                ...(row.titleSource === null || row.titleSource === undefined
+                  ? {}
+                  : { titleSource: row.titleSource }),
                 modelSelection: row.modelSelection,
                 runtimeMode: row.runtimeMode,
                 interactionMode: row.interactionMode,
@@ -2896,6 +2915,9 @@ pending_approval_requests AS (
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
         title: threadRow.value.title,
+        ...(threadRow.value.titleSource === null || threadRow.value.titleSource === undefined
+          ? {}
+          : { titleSource: threadRow.value.titleSource }),
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,
         interactionMode: threadRow.value.interactionMode,
@@ -2943,6 +2965,7 @@ pending_approval_requests AS (
       return Option.map(context, (row) => ({
         id: row.id,
         title: row.title,
+        ...(row.titleSource === null ? {} : { titleSource: row.titleSource }),
         session: row.session === null ? null : mapSessionRow(row.session),
       }));
     });
@@ -3179,6 +3202,9 @@ pending_approval_requests AS (
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
         title: threadRow.value.title,
+        ...(threadRow.value.titleSource === null || threadRow.value.titleSource === undefined
+          ? {}
+          : { titleSource: threadRow.value.titleSource }),
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,
         interactionMode: threadRow.value.interactionMode,

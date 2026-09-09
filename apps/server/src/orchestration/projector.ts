@@ -331,6 +331,7 @@ export function projectEvent(
             id: payload.threadId,
             projectId: payload.projectId,
             title: payload.title,
+            ...(payload.titleSource !== undefined ? { titleSource: payload.titleSource } : {}),
             modelSelection: payload.modelSelection,
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
@@ -502,6 +503,7 @@ export function projectEvent(
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             ...(payload.title !== undefined ? { title: payload.title } : {}),
+            ...(payload.title !== undefined ? { titleSource: payload.titleSource ?? "user" } : {}),
             ...(payload.activeOrderKey !== undefined
               ? { activeOrderKey: payload.activeOrderKey }
               : {}),

@@ -607,10 +607,13 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         assert.deepEqual(context.value, {
           id: ThreadId.make("thread-1"),
           title: "Thread 1",
-          session: snapshot.threads[0]?.session,
+          session: snapshot.threads[0]?.session ?? null,
         });
       }
 
+      yield* sql`
+        UPDATE projection_threads SET title_source = 'automatic' WHERE thread_id = 'thread-1'
+      `;
       yield* sql`
         UPDATE projection_thread_sessions
         SET status = 'starting', active_turn_id = NULL, provider_name = 'claudeAgent',
@@ -622,6 +625,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       );
       assert.equal(changedContext._tag, "Some");
       if (changedContext._tag === "Some") {
+        assert.equal(changedContext.value.titleSource, "automatic");
         assert.equal(changedContext.value.session?.status, "starting");
         assert.equal(changedContext.value.session?.activeTurnId, null);
         assert.equal(changedContext.value.session?.providerName, "claudeAgent");

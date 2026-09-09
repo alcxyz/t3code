@@ -339,6 +339,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           threadId: ThreadId.make("thread-1"),
           projectId: ProjectId.make("project-1"),
           title: "Thread 1",
+          titleSource: "automatic",
           modelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
@@ -522,12 +523,22 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         yield* projectionPipeline.bootstrap;
         const rows = yield* sql<{
           readonly activeOrderKey: string | null;
+          readonly titleSource: string | null;
           readonly updatedAt: string;
         }>`
-          SELECT active_order_key AS "activeOrderKey", updated_at AS "updatedAt"
+          SELECT
+            active_order_key AS "activeOrderKey",
+            title_source AS "titleSource",
+            updated_at AS "updatedAt"
           FROM projection_threads WHERE thread_id = 'thread-1'
         `;
-        assert.deepEqual(rows, [{ activeOrderKey: "gm", updatedAt: orderUpdatedAt }]);
+        assert.deepEqual(rows, [
+          {
+            activeOrderKey: "gm",
+            titleSource: "title" in event.payload ? "user" : "automatic",
+            updatedAt: orderUpdatedAt,
+          },
+        ]);
       }
 
       // Settled lifecycle through the DB pipeline: thread.settled writes the
@@ -4014,6 +4025,56 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
         WHERE projector = 'projection.projects'
       `;
       assert.deepEqual(projectorRows, [{ lastAppliedSequence: 1 }]);
+    }),
+  );
+
+  it.effect("round-trips title ownership through projected shell and detail snapshots", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const snapshots = yield* ProjectionSnapshotQuery;
+      const projectId = ProjectId.make("project-title-source");
+      const threadId = ThreadId.make("thread-title-source");
+      const createdAt = "2026-01-01T00:00:00.000Z";
+
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-title-source-project"),
+        projectId,
+        title: "Title Source Project",
+        workspaceRoot: "/tmp/project-title-source",
+        createdAt,
+      });
+      yield* engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-title-source-thread"),
+        threadId,
+        projectId,
+        title: "Automatic title",
+        titleSource: "automatic",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdAt,
+      });
+
+      const automaticShell = yield* snapshots.getThreadShellById(threadId);
+      const automaticDetail = yield* snapshots.getThreadDetailById(threadId);
+      assert.strictEqual(Option.getOrThrow(automaticShell).titleSource, "automatic");
+      assert.strictEqual(Option.getOrThrow(automaticDetail).titleSource, "automatic");
+
+      yield* engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-title-source-manual"),
+        threadId,
+        title: "Manual title",
+      });
+
+      const userShell = yield* snapshots.getThreadShellById(threadId);
+      const userDetail = yield* snapshots.getThreadDetailById(threadId);
+      assert.strictEqual(Option.getOrThrow(userShell).titleSource, "user");
+      assert.strictEqual(Option.getOrThrow(userDetail).titleSource, "user");
     }),
   );
 
