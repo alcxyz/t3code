@@ -35,6 +35,7 @@ import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import {
+  isAgentActivityPublishingEnabledValue,
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
   RELAY_ISSUER_SECRET,
@@ -44,6 +45,7 @@ import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../cloud/environme
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { forkParked } from "../serverActivation.ts";
 
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
@@ -65,9 +67,18 @@ export function eventThreadId(event: OrchestrationEvent): ThreadId | null {
 }
 
 export function shouldPublishAgentAwarenessEvent(event: OrchestrationEvent): boolean {
+  if (event.metadata.historyImport === true) {
+    return false;
+  }
   switch (event.type) {
     case "thread.message-sent":
-      return !event.payload.streaming;
+    case "thread.turn-start-requested":
+      // These events express intent to start work, but the shell still contains
+      // the previous turn's terminal state until the provider acknowledges the
+      // new turn. Publishing that snapshot can queue a fresh "Done" alert just
+      // before the real running state arrives. Provider lifecycle events publish
+      // the authoritative starting/running state instead.
+      return false;
     case "thread.proposed-plan-upserted":
     case "thread.runtime-mode-set":
     case "thread.interaction-mode-set":
@@ -92,10 +103,6 @@ export function agentAwarenessPublishIdentity(state: RelayAgentActivityState | n
   }
   const { updatedAt: _updatedAt, ...meaningfulState } = state;
   return JSON.stringify(meaningfulState);
-}
-
-export function isAgentActivityPublishingEnabled(value: string | null): boolean {
-  return value === "true";
 }
 
 export function resolveAgentActivityPublishingStartupState(input: {
@@ -204,7 +211,7 @@ const makePublishProof = Effect.fn("makePublishProof")(function* (input: {
 });
 
 // Compact, log-safe view of the fields the awareness phase ladder reads.
-export function describeThreadShellForAwareness(
+function describeThreadShellForAwareness(
   thread: Option.Option<OrchestrationThreadShell>,
 ): Record<string, unknown> {
   if (Option.isNone(thread)) {
@@ -283,6 +290,7 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
     .map((thread) => thread.id);
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
@@ -314,7 +322,7 @@ export const make = Effect.gen(function* () {
   });
 
   const readPublishAgentActivityEnabled = readSecretString(PUBLISH_AGENT_ACTIVITY_SECRET).pipe(
-    Effect.map(isAgentActivityPublishingEnabled),
+    Effect.map(isAgentActivityPublishingEnabledValue),
   );
 
   const makeRelayClient = (relayConfig: {
@@ -593,12 +601,12 @@ export const make = Effect.gen(function* () {
           });
           break;
       }
-      yield* Effect.forkScoped(
+      yield* forkParked(
         Effect.sleep("1 second").pipe(
           Effect.andThen(publishActiveThreadsOnceWhenConfigured(startupState !== "enabled")),
         ),
       );
-      yield* Effect.forkScoped(
+      yield* forkParked(
         Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
           const threadId = eventThreadId(event);
           if (threadId === null) {
