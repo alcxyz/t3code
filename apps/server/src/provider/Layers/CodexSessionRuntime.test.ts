@@ -195,6 +195,36 @@ describe("buildTurnStartParams", () => {
     NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
   });
 
+  it.effect("refreshes automatic thread-title guidance in each turn payload", () =>
+    Effect.gen(function* () {
+      const titledTurn = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Continue the task",
+        interactionMode: "default",
+        currentThreadTitle: "Investigate websocket reconnects",
+      });
+      const titledInstructions = titledTurn.collaborationMode?.settings.developer_instructions;
+
+      NodeAssert.ok(titledInstructions?.includes("<thread_title_updates>"));
+      NodeAssert.ok(titledInstructions?.includes('"Investigate websocket reconnects"'));
+      NodeAssert.ok(titledInstructions?.includes("rename_current_thread"));
+
+      const untitledTurn = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Continue the task",
+        interactionMode: "default",
+      });
+      const untitledInstructions = untitledTurn.collaborationMode?.settings.developer_instructions;
+
+      NodeAssert.ok(untitledInstructions);
+      NodeAssert.doesNotMatch(untitledInstructions, /<thread_title_updates>/);
+      NodeAssert.doesNotMatch(untitledInstructions, /rename_current_thread/);
+      NodeAssert.doesNotMatch(untitledInstructions, /Investigate websocket reconnects/);
+    }),
+  );
+
   it.effect("routes approvals to the auto reviewer in auto mode", () =>
     Effect.gen(function* () {
       const params = yield* buildTurnStartParams({

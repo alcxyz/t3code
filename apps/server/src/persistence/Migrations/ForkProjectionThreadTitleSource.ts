@@ -7,8 +7,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  *
  * Reconciliation matters after a round trip through an older upstream build:
  * that build can project a title event but cannot update `title_source`. The
- * latest title-bearing event remains canonical, and an event without ownership
- * is deliberately treated as user-owned.
+ * latest title-bearing event remains canonical. Older server-generated titles
+ * have no ownership field, but their dedicated command identifies the writer.
+ * Unknown writers remain protected, as do later manual renames.
  */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -29,6 +30,14 @@ export default Effect.gen(function* () {
         json_extract(payload_json, '$.title') AS title,
         CASE
           WHEN json_extract(payload_json, '$.titleSource') = 'automatic'
+            THEN 'automatic'
+          WHEN json_type(payload_json, '$.titleSource') IS NULL
+            AND event_type = 'thread.meta-updated'
+            AND actor_kind = 'server'
+            AND (
+              command_id GLOB 'server:thread-title-rename:*'
+              OR command_id GLOB 'server:thread-title-regeneration-complete:*'
+            )
             THEN 'automatic'
           ELSE 'user'
         END AS title_source,

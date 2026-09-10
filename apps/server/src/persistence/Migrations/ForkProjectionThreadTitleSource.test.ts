@@ -5,6 +5,102 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { migrationManifest, runMigrations } from "../Migrations.ts";
+import reconcileTitleSource from "./ForkProjectionThreadTitleSource.ts";
+
+it.layer(NodeSqliteClient.layerMemory())("historical generated title ownership", (it) => {
+  it.effect("recovers proven server titles while preserving manual and ambiguous titles", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations();
+      const cases = [
+        {
+          id: "generated",
+          command: "server:thread-title-rename:old",
+          actor: "server",
+          expected: "automatic",
+        },
+        {
+          id: "regenerated",
+          command: "server:thread-title-regeneration-complete:old",
+          actor: "server",
+          expected: "automatic",
+        },
+        { id: "manual", command: "manual-rename", actor: "user", expected: "user" },
+        { id: "unknown-server", command: "server:unknown:old", actor: "server", expected: "user" },
+        {
+          id: "wrong-actor",
+          command: "server:thread-title-rename:old",
+          actor: "user",
+          expected: "user",
+        },
+        {
+          id: "explicit-user",
+          command: "server:thread-title-rename:old",
+          actor: "server",
+          source: "user",
+          expected: "user",
+        },
+        {
+          id: "manual-after-generated",
+          command: "server:thread-title-rename:old",
+          actor: "server",
+          manualAfter: true,
+          expected: "user",
+        },
+      ];
+      for (const entry of cases) {
+        const title = `Title ${entry.id}`;
+        yield* sql`
+          INSERT INTO projection_threads (
+            thread_id, project_id, title, model_selection_json, runtime_mode,
+            created_at, updated_at, title_source
+          ) VALUES (
+            ${entry.id}, 'project-1', ${title},
+            '{"instanceId":"codex","model":"gpt-5.4"}', 'full-access',
+            '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'user'
+          )
+        `;
+        const payload = JSON.stringify({
+          title,
+          ...(entry.source ? { titleSource: entry.source } : {}),
+        });
+        yield* sql`
+          INSERT INTO orchestration_events (
+            event_id, aggregate_kind, stream_id, stream_version, event_type,
+            occurred_at, command_id, actor_kind, payload_json, metadata_json
+          ) VALUES (
+            ${entry.id}, 'thread', ${entry.id}, 1, 'thread.meta-updated',
+            '2026-01-01T00:00:00.000Z', ${entry.command}, ${entry.actor}, ${payload}, '{}'
+          )
+        `;
+        if (entry.manualAfter) {
+          // Even choosing the same title manually transfers ownership.
+          yield* sql`
+            INSERT INTO orchestration_events (
+              event_id, aggregate_kind, stream_id, stream_version, event_type,
+              occurred_at, command_id, actor_kind, payload_json, metadata_json
+            ) VALUES (
+              ${`${entry.id}-manual`}, 'thread', ${entry.id}, 2, 'thread.meta-updated',
+              '2026-01-02T00:00:00.000Z', 'manual-newer', 'user', ${payload}, '{}'
+            )
+          `;
+        }
+      }
+      for (const _ of [1, 2]) {
+        yield* reconcileTitleSource;
+        const rows = yield* sql<{ readonly id: string; readonly source: string }>`
+          SELECT thread_id AS id, title_source AS source FROM projection_threads ORDER BY thread_id
+        `;
+        assert.deepEqual(
+          rows,
+          cases
+            .map(({ id, expected }) => ({ id, source: expected }))
+            .sort((a, b) => a.id.localeCompare(b.id)),
+        );
+      }
+    }),
+  );
+});
 
 it.layer(NodeSqliteClient.layerMemory())("ForkProjectionThreadTitleSource", (it) => {
   it.effect("round trips title ownership through an upstream v0.0.38-style write", () =>
