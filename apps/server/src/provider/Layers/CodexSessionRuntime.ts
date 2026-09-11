@@ -40,6 +40,7 @@ import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
+import { buildThreadTitleInstructions } from "../RuntimeInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -572,7 +573,6 @@ function buildCodexCollaborationMode(input: {
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly browserToolsAvailable?: boolean;
-  readonly currentThreadTitle?: string;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
     return undefined;
@@ -589,7 +589,6 @@ function buildCodexCollaborationMode(input: {
         {
           model,
           reasoningEffort,
-          ...(input.currentThreadTitle ? { currentThreadTitle: input.currentThreadTitle } : {}),
         },
         input.browserToolsAvailable ?? true,
       ),
@@ -617,6 +616,13 @@ export function buildTurnStartParams(input: {
   CodexErrors.CodexAppServerProtocolParseError
 > {
   const turnInput: Array<EffectCodexSchema.V2TurnStartParams__UserInput> = [];
+  // Send turn-specific title guidance as input, as the Claude adapter does.
+  // Collaboration-mode settings can be recorded without their custom
+  // developer instructions reaching the model.
+  const titleInstructions = buildThreadTitleInstructions(input.currentThreadTitle);
+  if (titleInstructions) {
+    turnInput.push({ type: "text", text: titleInstructions });
+  }
   if (input.prompt) {
     turnInput.push({
       type: "text",
@@ -633,7 +639,6 @@ export function buildTurnStartParams(input: {
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
     browserToolsAvailable: input.browserToolsAvailable ?? true,
-    ...(input.currentThreadTitle ? { currentThreadTitle: input.currentThreadTitle } : {}),
   });
 
   return decodeCodexTurnStartParamsWithCollaborationMode({

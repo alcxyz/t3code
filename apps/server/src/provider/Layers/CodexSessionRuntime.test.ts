@@ -206,9 +206,15 @@ describe("buildTurnStartParams", () => {
       });
       const titledInstructions = titledTurn.collaborationMode?.settings.developer_instructions;
 
-      NodeAssert.ok(titledInstructions?.includes("<thread_title_updates>"));
-      NodeAssert.ok(titledInstructions?.includes('"Investigate websocket reconnects"'));
-      NodeAssert.ok(titledInstructions?.includes("rename_current_thread"));
+      NodeAssert.ok(titledInstructions);
+      NodeAssert.doesNotMatch(titledInstructions, /<thread_title_updates>/);
+      const titleInput = titledTurn.input[0];
+      NodeAssert.equal(titleInput?.type, "text");
+      if (titleInput?.type !== "text") throw new Error("Expected title guidance as text input");
+      NodeAssert.match(titleInput.text, /<thread_title_updates>/);
+      NodeAssert.match(titleInput.text, /rename_current_thread/);
+      NodeAssert.match(titleInput.text, /Investigate websocket reconnects/);
+      NodeAssert.equal(titledTurn.input[1]?.type, "text");
 
       const untitledTurn = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
@@ -222,6 +228,24 @@ describe("buildTurnStartParams", () => {
       NodeAssert.doesNotMatch(untitledInstructions, /<thread_title_updates>/);
       NodeAssert.doesNotMatch(untitledInstructions, /rename_current_thread/);
       NodeAssert.doesNotMatch(untitledInstructions, /Investigate websocket reconnects/);
+      NodeAssert.deepStrictEqual(untitledTurn.input, [{ type: "text", text: "Continue the task" }]);
+    }),
+  );
+
+  it.effect("delivers title guidance even without collaboration-mode settings", () =>
+    Effect.gen(function* () {
+      const turn = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Implement the fix",
+        currentThreadTitle: "Investigate the bug",
+      });
+      NodeAssert.equal(turn.collaborationMode, undefined);
+      const context = turn.input[0];
+      NodeAssert.equal(context?.type, "text");
+      if (context?.type !== "text") throw new Error("Expected title guidance as text input");
+      NodeAssert.match(context.text, /<thread_title_updates>/);
+      NodeAssert.deepStrictEqual(turn.input[1], { type: "text", text: "Implement the fix" });
     }),
   );
 
