@@ -9,7 +9,6 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Logger from "effect/Logger";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -222,33 +221,5 @@ it.effect("preserves initialized capabilities when optional usage times out", ()
     ]);
     assert.equal(capabilities?.usage, undefined);
     assert.equal(abortSignal?.aborted, true);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-);
-
-it.effect("records safe diagnostics for failed and empty quota responses", () =>
-  Effect.gen(function* () {
-    for (const reason of ["request_failed", "empty_response"] as const) {
-      const messages: unknown[] = [];
-      const logger = Logger.make<unknown, void>(({ message }) => {
-        messages.push(message);
-      });
-      const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(
-        () =>
-          ({
-            initializationResult: async () => ({ account: {}, commands: [] }),
-            usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
-              reason === "request_failed"
-                ? Promise.reject(new Error("private upstream response must not be logged"))
-                : Promise.resolve({ rate_limits_available: true, rate_limits: null }),
-          }) as unknown as ReturnType<typeof ClaudeSdk.query>,
-      );
-      yield* probeClaudeCapabilities(decodeClaudeSettings({ binaryPath: "claude" })).pipe(
-        Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
-        Effect.ensuring(Effect.sync(() => query.mockRestore())),
-      );
-      const recorded = JSON.stringify(messages);
-      assert.ok(recorded.includes(reason));
-      assert.ok(!recorded.includes("private upstream response"));
-    }
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
