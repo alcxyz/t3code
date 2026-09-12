@@ -616,6 +616,7 @@ export const OrchestrationThread = Schema.Struct({
   title: TrimmedNonEmptyString,
   // Missing means a legacy, conservatively user-owned title.
   titleSource: Schema.optional(ThreadTitleSource),
+  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
@@ -699,6 +700,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   titleSource: Schema.optional(ThreadTitleSource),
+  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
@@ -1546,6 +1548,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   title: Schema.optional(TrimmedNonEmptyString),
   titleSource: Schema.optional(ThreadTitleSource),
+  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   /** Intent marker consumed by the title-generation reactor. Keeping this on
       the existing event lets older clients safely ignore the new field. */
   regenerateTitle: Schema.optional(Schema.Literal(true)),

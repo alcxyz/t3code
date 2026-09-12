@@ -497,6 +497,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_source AS "titleSource",
+          title_auto_renamed_at AS "titleAutoRenamedAt",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -538,6 +539,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_source AS "titleSource",
+          title_auto_renamed_at AS "titleAutoRenamedAt",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -581,6 +583,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_source AS "titleSource",
+          title_auto_renamed_at AS "titleAutoRenamedAt",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -1073,6 +1076,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_source AS "titleSource",
+          title_auto_renamed_at AS "titleAutoRenamedAt",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -2073,6 +2077,7 @@ pending_approval_requests AS (
                 id: row.threadId,
                 projectId: row.projectId,
                 title: row.title,
+                titleAutoRenamedAt: row.titleAutoRenamedAt ?? null,
                 ...(row.titleSource === null || row.titleSource === undefined
                   ? {}
                   : { titleSource: row.titleSource }),
@@ -2291,6 +2296,7 @@ pending_approval_requests AS (
                   id: row.threadId,
                   projectId: row.projectId,
                   title: row.title,
+                  titleAutoRenamedAt: row.titleAutoRenamedAt ?? null,
                   ...(row.titleSource === null || row.titleSource === undefined
                     ? {}
                     : { titleSource: row.titleSource }),
@@ -2436,6 +2442,7 @@ pending_approval_requests AS (
                       id: row.threadId,
                       projectId: row.projectId,
                       title: row.title,
+                      titleAutoRenamedAt: row.titleAutoRenamedAt ?? null,
                       ...(row.titleSource === null || row.titleSource === undefined
                         ? {}
                         : { titleSource: row.titleSource }),
@@ -2589,6 +2596,7 @@ pending_approval_requests AS (
                 id: row.threadId,
                 projectId: row.projectId,
                 title: row.title,
+                titleAutoRenamedAt: row.titleAutoRenamedAt ?? null,
                 ...(row.titleSource === null || row.titleSource === undefined
                   ? {}
                   : { titleSource: row.titleSource }),
@@ -2915,6 +2923,7 @@ pending_approval_requests AS (
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
         title: threadRow.value.title,
+        titleAutoRenamedAt: threadRow.value.titleAutoRenamedAt ?? null,
         ...(threadRow.value.titleSource === null || threadRow.value.titleSource === undefined
           ? {}
           : { titleSource: threadRow.value.titleSource }),
@@ -3202,6 +3211,7 @@ pending_approval_requests AS (
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
         title: threadRow.value.title,
+        titleAutoRenamedAt: threadRow.value.titleAutoRenamedAt ?? null,
         ...(threadRow.value.titleSource === null || threadRow.value.titleSource === undefined
           ? {}
           : { titleSource: threadRow.value.titleSource }),

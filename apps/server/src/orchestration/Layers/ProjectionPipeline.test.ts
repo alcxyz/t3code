@@ -4059,10 +4059,30 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
         createdAt,
       });
 
+      yield* engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("server:thread-title-rename:initial"),
+        threadId,
+        title: "Initial generated title",
+        titleSource: "automatic",
+      });
       const automaticShell = yield* snapshots.getThreadShellById(threadId);
       const automaticDetail = yield* snapshots.getThreadDetailById(threadId);
       assert.strictEqual(Option.getOrThrow(automaticShell).titleSource, "automatic");
       assert.strictEqual(Option.getOrThrow(automaticDetail).titleSource, "automatic");
+      assert.isNull(Option.getOrThrow(automaticShell).titleAutoRenamedAt);
+
+      yield* engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("agent-thread-title:cue-test"),
+        threadId,
+        title: "A more specific objective",
+        titleSource: "automatic",
+      });
+      const renamedShell = Option.getOrThrow(yield* snapshots.getThreadShellById(threadId));
+      const renamedDetail = Option.getOrThrow(yield* snapshots.getThreadDetailById(threadId));
+      assert.isString(renamedShell.titleAutoRenamedAt);
+      assert.strictEqual(renamedDetail.titleAutoRenamedAt, renamedShell.titleAutoRenamedAt);
 
       yield* engine.dispatch({
         type: "thread.meta.update",
@@ -4075,6 +4095,8 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       const userDetail = yield* snapshots.getThreadDetailById(threadId);
       assert.strictEqual(Option.getOrThrow(userShell).titleSource, "user");
       assert.strictEqual(Option.getOrThrow(userDetail).titleSource, "user");
+      assert.isNull(Option.getOrThrow(userShell).titleAutoRenamedAt);
+      assert.isNull(Option.getOrThrow(userDetail).titleAutoRenamedAt);
     }),
   );
 

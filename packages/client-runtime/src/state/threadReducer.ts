@@ -95,6 +95,7 @@ export function applyThreadDetailEvent(
           ...(event.payload.titleSource !== undefined
             ? { titleSource: event.payload.titleSource }
             : {}),
+          titleAutoRenamedAt: null,
           modelSelection: event.payload.modelSelection,
           runtimeMode: event.payload.runtimeMode,
           interactionMode: event.payload.interactionMode,
@@ -234,7 +235,10 @@ export function applyThreadDetailEvent(
           ...thread,
           ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
           ...(event.payload.title !== undefined
-            ? { titleSource: event.payload.titleSource ?? "user" }
+            ? {
+                titleSource: event.payload.titleSource ?? "user",
+                titleAutoRenamedAt: event.payload.titleAutoRenamedAt ?? null,
+              }
             : {}),
           ...(event.payload.titleRegeneration !== undefined
             ? { titleRegeneration: event.payload.titleRegeneration }

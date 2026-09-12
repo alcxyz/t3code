@@ -927,7 +927,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           ...(command.title !== undefined && titleChanged
-            ? { title: command.title, titleSource }
+            ? {
+                title: command.title,
+                titleSource,
+                titleAutoRenamedAt:
+                  titleSource === "automatic" && command.commandId.startsWith("agent-thread-title:")
+                    ? occurredAt
+                    : null,
+              }
             : {}),
           ...(command.regenerateTitle === true
             ? {
@@ -1031,7 +1038,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           ...(requestIsCurrent && command.title !== undefined
-            ? { title: command.title, titleSource: "automatic" as const }
+            ? { title: command.title, titleSource: "automatic" as const, titleAutoRenamedAt: null }
             : {}),
           ...(requestIsCurrent ? { titleRegeneration: null } : {}),
           updatedAt: requestIsCurrent ? occurredAt : thread.updatedAt,

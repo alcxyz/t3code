@@ -8,7 +8,8 @@ export type ThreadStatusKind =
   | "working"
   | "connecting"
   | "error"
-  | "plan-ready";
+  | "plan-ready"
+  | "renamed";
 
 export interface ThreadStatusPresentation extends StatusTone {
   readonly kind: ThreadStatusKind;
@@ -110,6 +111,24 @@ export function resolveThreadStatus(
       textClassName: "text-foreground-secondary",
       iconColor: "#bf5af2",
       iconBackground: "rgba(191,90,242,0.22)",
+      pulse: false,
+    };
+  }
+
+  const renamedAt = Date.parse(thread.titleAutoRenamedAt ?? "");
+  const latestUserMessageAt = Date.parse(thread.latestUserMessageAt ?? "");
+  if (
+    Number.isFinite(renamedAt) &&
+    (thread.latestUserMessageAt === null ||
+      (Number.isFinite(latestUserMessageAt) && renamedAt > latestUserMessageAt))
+  ) {
+    return {
+      kind: "renamed",
+      label: "Renamed",
+      pillClassName: "bg-warning",
+      textClassName: "text-warning-foreground",
+      iconColor: "#ff9f0a",
+      iconBackground: "rgba(255,159,10,0.22)",
       pulse: false,
     };
   }

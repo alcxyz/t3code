@@ -22,12 +22,19 @@ export default Effect.gen(function* () {
       ADD COLUMN title_source TEXT
     `;
   }
+  if (!columns.some((column) => column.name === "title_auto_renamed_at")) {
+    yield* sql`
+      ALTER TABLE projection_threads
+      ADD COLUMN title_auto_renamed_at TEXT
+    `;
+  }
 
   yield* sql`
     WITH latest_title_events AS (
       SELECT
         stream_id AS thread_id,
         json_extract(payload_json, '$.title') AS title,
+        json_extract(payload_json, '$.titleAutoRenamedAt') AS title_auto_renamed_at,
         CASE
           WHEN json_extract(payload_json, '$.titleSource') = 'automatic'
             THEN 'automatic'
@@ -49,11 +56,13 @@ export default Effect.gen(function* () {
         AND json_type(payload_json, '$.title') = 'text'
     )
     UPDATE projection_threads AS thread
-    SET title_source = latest.title_source
+    SET title_source = latest.title_source,
+        title_auto_renamed_at = latest.title_auto_renamed_at
     FROM latest_title_events AS latest
     WHERE latest.recency = 1
       AND latest.thread_id = thread.thread_id
       AND latest.title = thread.title
-      AND thread.title_source IS NOT latest.title_source
+      AND (thread.title_source IS NOT latest.title_source
+        OR thread.title_auto_renamed_at IS NOT latest.title_auto_renamed_at)
   `;
 });

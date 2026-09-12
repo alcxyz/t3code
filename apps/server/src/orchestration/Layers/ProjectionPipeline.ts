@@ -604,6 +604,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             projectId: event.payload.projectId,
             title: event.payload.title,
             titleSource: event.payload.titleSource ?? null,
+            titleAutoRenamedAt: null,
             modelSelection: event.payload.modelSelection,
             runtimeMode: event.payload.runtimeMode,
             interactionMode: event.payload.interactionMode,
@@ -798,7 +799,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...existingRow.value,
             ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
             ...(event.payload.title !== undefined
-              ? { titleSource: event.payload.titleSource ?? "user" }
+              ? {
+                  titleSource: event.payload.titleSource ?? "user",
+                  titleAutoRenamedAt: event.payload.titleAutoRenamedAt ?? null,
+                }
               : {}),
             ...(event.payload.activeOrderKey !== undefined
               ? { activeOrderKey: event.payload.activeOrderKey }

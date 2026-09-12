@@ -332,6 +332,7 @@ export function projectEvent(
             projectId: payload.projectId,
             title: payload.title,
             ...(payload.titleSource !== undefined ? { titleSource: payload.titleSource } : {}),
+            titleAutoRenamedAt: null,
             modelSelection: payload.modelSelection,
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
@@ -503,7 +504,12 @@ export function projectEvent(
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             ...(payload.title !== undefined ? { title: payload.title } : {}),
-            ...(payload.title !== undefined ? { titleSource: payload.titleSource ?? "user" } : {}),
+            ...(payload.title !== undefined
+              ? {
+                  titleSource: payload.titleSource ?? "user",
+                  titleAutoRenamedAt: payload.titleAutoRenamedAt ?? null,
+                }
+              : {}),
             ...(payload.activeOrderKey !== undefined
               ? { activeOrderKey: payload.activeOrderKey }
               : {}),

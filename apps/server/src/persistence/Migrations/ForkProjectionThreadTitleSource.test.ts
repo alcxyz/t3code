@@ -145,7 +145,7 @@ it.layer(NodeSqliteClient.layerMemory())("ForkProjectionThreadTitleSource", (it)
         ) VALUES (
           'fork-automatic-title', 'thread', 'thread-1', 2, 'thread.meta-updated',
           '2026-01-01T12:00:00.000Z', 'system',
-          '{"threadId":"thread-1","title":"Fork automatic title","titleSource":"automatic"}', '{}'
+          '{"threadId":"thread-1","title":"Fork automatic title","titleSource":"automatic","titleAutoRenamedAt":"2026-01-01T12:00:00.000Z"}', '{}'
         )
       `;
       yield* sql`
@@ -154,6 +154,12 @@ it.layer(NodeSqliteClient.layerMemory())("ForkProjectionThreadTitleSource", (it)
           updated_at = '2026-01-01T12:00:00.000Z'
         WHERE thread_id = 'thread-1'
       `;
+
+      yield* runMigrations();
+      const renameCue = yield* sql<{ readonly renamedAt: string | null }>`
+        SELECT title_auto_renamed_at AS "renamedAt" FROM projection_threads WHERE thread_id = 'thread-1'
+      `;
+      assert.deepEqual(renameCue, [{ renamedAt: "2026-01-01T12:00:00.000Z" }]);
 
       // v0.0.38 ignores the extra projection column and emits no ownership
       // field when it projects a manual rename.
@@ -178,6 +184,11 @@ it.layer(NodeSqliteClient.layerMemory())("ForkProjectionThreadTitleSource", (it)
         SELECT title_source AS "titleSource" FROM projection_threads WHERE thread_id = 'thread-1'
       `;
       assert.deepEqual(rows, [{ titleSource: "user" }]);
+
+      const clearedCue = yield* sql<{ readonly renamedAt: string | null }>`
+        SELECT title_auto_renamed_at AS "renamedAt" FROM projection_threads WHERE thread_id = 'thread-1'
+      `;
+      assert.deepEqual(clearedCue, [{ renamedAt: null }]);
 
       const forkMigrationRows = yield* sql<{ readonly migrationId: number }>`
         SELECT migration_id AS "migrationId"
