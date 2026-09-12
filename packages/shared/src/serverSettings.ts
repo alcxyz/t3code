@@ -30,19 +30,23 @@ export function resolveAutomaticThreadTitleRenameLimit(
     | "automaticThreadTitleRenamePolicy"
     | "automaticThreadTitleRenameMaxCount"
     | "automaticThreadTitleRenameWindowHours"
+    | "automaticThreadTitleRenameMinAgeMinutes"
+    | "automaticThreadTitleRenameMinCompletedTurns"
   >,
-): { maxCount: number; windowHours: number } {
+): { maxCount: number; windowHours: number; minAgeMinutes: number; minCompletedTurns: number } {
   switch (settings.automaticThreadTitleRenamePolicy) {
     case "rare":
-      return { maxCount: 1, windowHours: 24 };
+      return { maxCount: 1, windowHours: 24, minAgeMinutes: 360, minCompletedTurns: 10 };
     case "balanced":
-      return { maxCount: 1, windowHours: 12 };
+      return { maxCount: 1, windowHours: 12, minAgeMinutes: 120, minCompletedTurns: 5 };
     case "often":
-      return { maxCount: 1, windowHours: 6 };
+      return { maxCount: 1, windowHours: 6, minAgeMinutes: 30, minCompletedTurns: 3 };
     case "custom":
       return {
         maxCount: settings.automaticThreadTitleRenameMaxCount,
         windowHours: settings.automaticThreadTitleRenameWindowHours,
+        minAgeMinutes: settings.automaticThreadTitleRenameMinAgeMinutes,
+        minCompletedTurns: settings.automaticThreadTitleRenameMinCompletedTurns,
       };
   }
 }

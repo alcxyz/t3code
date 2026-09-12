@@ -93,6 +93,8 @@ describe("splitSharedServerPatch", () => {
       automaticThreadTitleRenamePolicy: "often",
       automaticThreadTitleRenameMaxCount: 5,
       automaticThreadTitleRenameWindowHours: 48,
+      automaticThreadTitleRenameMinAgeMinutes: 90,
+      automaticThreadTitleRenameMinCompletedTurns: 7,
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
@@ -105,6 +107,8 @@ describe("splitSharedServerPatch", () => {
       automaticThreadTitleRenamePolicy: "often",
       automaticThreadTitleRenameMaxCount: 5,
       automaticThreadTitleRenameWindowHours: 48,
+      automaticThreadTitleRenameMinAgeMinutes: 90,
+      automaticThreadTitleRenameMinCompletedTurns: 7,
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
@@ -123,6 +127,8 @@ describe("pickSharedServerSettings", () => {
       Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
     ).toEqual([
       "automaticThreadTitleRenameMaxCount",
+      "automaticThreadTitleRenameMinAgeMinutes",
+      "automaticThreadTitleRenameMinCompletedTurns",
       "automaticThreadTitleRenamePolicy",
       "automaticThreadTitleRenameWindowHours",
       "automaticThreadTitles",
@@ -145,6 +151,8 @@ describe("filterSharedServerPatch", () => {
         automaticThreadTitleRenamePolicy: "custom" as const,
         automaticThreadTitleRenameMaxCount: 5,
         automaticThreadTitleRenameWindowHours: 48,
+        automaticThreadTitleRenameMinAgeMinutes: 90,
+        automaticThreadTitleRenameMinCompletedTurns: 7,
         sidebarAutoSettleOnMerge: false,
       };
 
@@ -171,6 +179,8 @@ describe("filterSharedServerPatch", () => {
       automaticThreadTitleRenamePolicy: "custom" as const,
       automaticThreadTitleRenameMaxCount: 4,
       automaticThreadTitleRenameWindowHours: 36,
+      automaticThreadTitleRenameMinAgeMinutes: 90,
+      automaticThreadTitleRenameMinCompletedTurns: 7,
     };
     const olderServer = {
       environmentId: laptopId,

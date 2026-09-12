@@ -167,6 +167,8 @@ describe("searchSettings", () => {
       "days-before-auto-settle",
       "automatic-thread-titles",
       "automatic-thread-title-frequency",
+      "automatic-thread-title-minimum-age",
+      "automatic-thread-title-minimum-turns",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
   });
@@ -202,6 +204,12 @@ describe("searchSettings", () => {
 
     expect(available.map((item) => item.id)).toContain("automatic-thread-titles");
     expect(available.map((item) => item.id)).toContain("automatic-thread-title-frequency");
+    expect(searchSettings("completed turns", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-minimum-turns",
+    );
+    expect(searchSettings("minimum age", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-minimum-age",
+    );
   });
 
   it("keeps catalog result ids unique", () => {

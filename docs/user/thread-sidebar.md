@@ -77,11 +77,22 @@ agents update a thread's title when its objective meaningfully changes. Title up
 part of agent work; T3 Code does not generate them on a schedule. Snoozed, archived, and settled
 threads are skipped.
 
-Choose **Rare** for at most one rename every 24 hours, **Balanced** (the default) for one every
-12 hours, or **Often** for one every 6 hours. **Custom** lets you set a maximum count and a window
-in hours. These are rolling limits for each thread, shared across devices and preserved across server restarts.
-Reaching a limit pauses automatic renaming until an earlier rename leaves the window; it does
-not queue a rename for later.
+Automatic updates wait until the thread meets both the age and completed-turn requirements:
+
+| Profile            | Minimum age  | Completed turns | Maximum renames               |
+| ------------------ | ------------ | --------------- | ----------------------------- |
+| Often              | 30 minutes   | 3               | 1 every 6 hours               |
+| Balanced (default) | 2 hours      | 5               | 1 every 12 hours              |
+| Rare               | 6 hours      | 10              | 1 every 24 hours              |
+| Custom             | Your minimum | Your minimum    | Your count and rolling window |
+
+A completed turn is a finished agent response or work cycle, not an individual tool call or progress
+update. The initial title is still generated normally by T3 Code. Eligibility only lets the agent
+consider an update; the objective must still meaningfully change.
+
+These limits are per thread, shared across devices, and preserved across server restarts. Reaching
+a rename limit pauses automatic renaming until an earlier rename leaves the rolling window; it
+does not queue a rename for later.
 
 Titles you renamed yourself stay protected. Choose **Regenerate title** from a thread's menu when
 you want the agent to replace a protected title and keep it up to date afterward. Manual renames,

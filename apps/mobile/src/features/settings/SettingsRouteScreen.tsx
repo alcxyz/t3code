@@ -39,9 +39,13 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironments } from "../../state/environments";
 import {
   DEFAULT_SERVER_SETTINGS,
+  MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+  MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
   MAX_AUTOMATIC_TITLE_RENAME_COUNT,
   MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+  MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
   MIN_AUTOMATIC_TITLE_RENAME_COUNT,
   MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
@@ -592,9 +596,9 @@ function GeneralSettingsSection() {
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_SERVER_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
 const AUTOMATIC_TITLE_POLICY_OPTIONS = [
-  { value: "rare", label: "Rare", detail: "Once / 24 hours" },
-  { value: "balanced", label: "Balanced", detail: "Once / 12 hours" },
-  { value: "often", label: "Often", detail: "Once / 6 hours" },
+  { value: "rare", label: "Rare", detail: "360 min + 10 turns" },
+  { value: "balanced", label: "Balanced", detail: "120 min + 5 turns" },
+  { value: "often", label: "Often", detail: "30 min + 3 turns" },
   { value: "custom", label: "Custom", detail: "Set limit" },
 ] as const;
 
@@ -623,6 +627,8 @@ function SharedThreadSettingsRows() {
   const [daysDraft, setDaysDraft] = useState<string | null>(null);
   const [titleCountDraft, setTitleCountDraft] = useState<string | null>(null);
   const [titleWindowDraft, setTitleWindowDraft] = useState<string | null>(null);
+  const [titleMinAgeDraft, setTitleMinAgeDraft] = useState<string | null>(null);
+  const [titleMinTurnsDraft, setTitleMinTurnsDraft] = useState<string | null>(null);
 
   if (reference === null || referenceSettings === null) {
     return null;
@@ -662,7 +668,11 @@ function SharedThreadSettingsRows() {
     currentValue: number,
     minimum: number,
     maximum: number,
-    patchKey: "automaticThreadTitleRenameMaxCount" | "automaticThreadTitleRenameWindowHours",
+    patchKey:
+      | "automaticThreadTitleRenameMaxCount"
+      | "automaticThreadTitleRenameWindowHours"
+      | "automaticThreadTitleRenameMinAgeMinutes"
+      | "automaticThreadTitleRenameMinCompletedTurns",
     clearDraft: () => void,
   ) => {
     const draft = (draftValue ?? "").trim();
@@ -709,12 +719,13 @@ function SharedThreadSettingsRows() {
               <View className="gap-1">
                 <Text className="text-lg text-foreground">Automatic title update frequency</Text>
                 <Text className="text-sm leading-normal text-foreground-muted">
-                  At most{" "}
+                  Eligible after {titleRenameLimit.minAgeMinutes} minutes and{" "}
+                  {titleRenameLimit.minCompletedTurns} completed{" "}
+                  {titleRenameLimit.minCompletedTurns === 1 ? "turn" : "turns"}. At most{" "}
                   {titleRenameLimit.maxCount === 1
                     ? "one update"
                     : `${titleRenameLimit.maxCount} updates`}{" "}
-                  in any rolling {titleRenameLimit.windowHours}-hour window. This is a maximum, not
-                  a schedule.
+                  per rolling {titleRenameLimit.windowHours}-hour window.
                 </Text>
               </View>
               <View className="flex-row flex-wrap gap-2">
@@ -747,75 +758,152 @@ function SharedThreadSettingsRows() {
           ) : null}
           {titleReferenceSettings.automaticThreadTitles &&
           titleReferenceSettings.automaticThreadTitleRenamePolicy === "custom" ? (
-            <View className="gap-3 border-t border-border-subtle p-4">
-              <Text className="text-lg text-foreground">Custom title update limit</Text>
-              <View className="flex-row items-center gap-3">
-                <TextInput
-                  className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
-                  keyboardType="number-pad"
-                  returnKeyType="done"
-                  value={
-                    titleCountDraft ??
-                    String(titleReferenceSettings.automaticThreadTitleRenameMaxCount)
-                  }
-                  onChangeText={setTitleCountDraft}
-                  onBlur={() =>
-                    commitTitleLimit(
-                      titleCountDraft,
-                      titleReferenceSettings.automaticThreadTitleRenameMaxCount,
-                      MIN_AUTOMATIC_TITLE_RENAME_COUNT,
-                      MAX_AUTOMATIC_TITLE_RENAME_COUNT,
-                      "automaticThreadTitleRenameMaxCount",
-                      () => setTitleCountDraft(null),
-                    )
-                  }
-                  onSubmitEditing={() =>
-                    commitTitleLimit(
-                      titleCountDraft,
-                      titleReferenceSettings.automaticThreadTitleRenameMaxCount,
-                      MIN_AUTOMATIC_TITLE_RENAME_COUNT,
-                      MAX_AUTOMATIC_TITLE_RENAME_COUNT,
-                      "automaticThreadTitleRenameMaxCount",
-                      () => setTitleCountDraft(null),
-                    )
-                  }
-                  accessibilityLabel="Automatic title update count"
-                />
-                <Text className="text-base text-foreground-muted">updates per</Text>
-                <TextInput
-                  className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
-                  keyboardType="number-pad"
-                  returnKeyType="done"
-                  value={
-                    titleWindowDraft ??
-                    String(titleReferenceSettings.automaticThreadTitleRenameWindowHours)
-                  }
-                  onChangeText={setTitleWindowDraft}
-                  onBlur={() =>
-                    commitTitleLimit(
-                      titleWindowDraft,
-                      titleReferenceSettings.automaticThreadTitleRenameWindowHours,
-                      MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
-                      MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
-                      "automaticThreadTitleRenameWindowHours",
-                      () => setTitleWindowDraft(null),
-                    )
-                  }
-                  onSubmitEditing={() =>
-                    commitTitleLimit(
-                      titleWindowDraft,
-                      titleReferenceSettings.automaticThreadTitleRenameWindowHours,
-                      MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
-                      MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
-                      "automaticThreadTitleRenameWindowHours",
-                      () => setTitleWindowDraft(null),
-                    )
-                  }
-                  accessibilityLabel="Automatic title update window in hours"
-                />
-                <Text className="text-base text-foreground-muted">hours</Text>
+            <>
+              <View className="gap-3 border-t border-border-subtle p-4">
+                <Text className="text-lg text-foreground">Custom title update rate</Text>
+                <View className="flex-row items-center gap-3">
+                  <TextInput
+                    className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    value={
+                      titleCountDraft ??
+                      String(titleReferenceSettings.automaticThreadTitleRenameMaxCount)
+                    }
+                    onChangeText={setTitleCountDraft}
+                    onBlur={() =>
+                      commitTitleLimit(
+                        titleCountDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMaxCount,
+                        MIN_AUTOMATIC_TITLE_RENAME_COUNT,
+                        MAX_AUTOMATIC_TITLE_RENAME_COUNT,
+                        "automaticThreadTitleRenameMaxCount",
+                        () => setTitleCountDraft(null),
+                      )
+                    }
+                    onSubmitEditing={() =>
+                      commitTitleLimit(
+                        titleCountDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMaxCount,
+                        MIN_AUTOMATIC_TITLE_RENAME_COUNT,
+                        MAX_AUTOMATIC_TITLE_RENAME_COUNT,
+                        "automaticThreadTitleRenameMaxCount",
+                        () => setTitleCountDraft(null),
+                      )
+                    }
+                    accessibilityLabel="Automatic title update count"
+                  />
+                  <Text className="text-base text-foreground-muted">updates per</Text>
+                  <TextInput
+                    className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    value={
+                      titleWindowDraft ??
+                      String(titleReferenceSettings.automaticThreadTitleRenameWindowHours)
+                    }
+                    onChangeText={setTitleWindowDraft}
+                    onBlur={() =>
+                      commitTitleLimit(
+                        titleWindowDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameWindowHours,
+                        MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+                        MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+                        "automaticThreadTitleRenameWindowHours",
+                        () => setTitleWindowDraft(null),
+                      )
+                    }
+                    onSubmitEditing={() =>
+                      commitTitleLimit(
+                        titleWindowDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameWindowHours,
+                        MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+                        MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+                        "automaticThreadTitleRenameWindowHours",
+                        () => setTitleWindowDraft(null),
+                      )
+                    }
+                    accessibilityLabel="Automatic title update window in hours"
+                  />
+                  <Text className="text-base text-foreground-muted">hours</Text>
+                </View>
               </View>
-            </View>
+              <View className="gap-3 border-t border-border-subtle p-4">
+                <View className="gap-1">
+                  <Text className="text-lg text-foreground">Custom title eligibility</Text>
+                  <Text className="text-sm leading-normal text-foreground-muted">
+                    Both thresholds are required. A turn is one completed agent response or work
+                    cycle; tool calls and progress updates do not count.
+                  </Text>
+                </View>
+                <View className="flex-row flex-wrap items-center gap-3">
+                  <TextInput
+                    className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    value={
+                      titleMinAgeDraft ??
+                      String(titleReferenceSettings.automaticThreadTitleRenameMinAgeMinutes)
+                    }
+                    onChangeText={setTitleMinAgeDraft}
+                    onBlur={() =>
+                      commitTitleLimit(
+                        titleMinAgeDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinAgeMinutes,
+                        MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        "automaticThreadTitleRenameMinAgeMinutes",
+                        () => setTitleMinAgeDraft(null),
+                      )
+                    }
+                    onSubmitEditing={() =>
+                      commitTitleLimit(
+                        titleMinAgeDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinAgeMinutes,
+                        MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        "automaticThreadTitleRenameMinAgeMinutes",
+                        () => setTitleMinAgeDraft(null),
+                      )
+                    }
+                    accessibilityLabel="Minimum thread age in minutes"
+                  />
+                  <Text className="text-base text-foreground-muted">minutes old and</Text>
+                  <TextInput
+                    className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    value={
+                      titleMinTurnsDraft ??
+                      String(titleReferenceSettings.automaticThreadTitleRenameMinCompletedTurns)
+                    }
+                    onChangeText={setTitleMinTurnsDraft}
+                    onBlur={() =>
+                      commitTitleLimit(
+                        titleMinTurnsDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinCompletedTurns,
+                        MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        "automaticThreadTitleRenameMinCompletedTurns",
+                        () => setTitleMinTurnsDraft(null),
+                      )
+                    }
+                    onSubmitEditing={() =>
+                      commitTitleLimit(
+                        titleMinTurnsDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinCompletedTurns,
+                        MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        "automaticThreadTitleRenameMinCompletedTurns",
+                        () => setTitleMinTurnsDraft(null),
+                      )
+                    }
+                    accessibilityLabel="Minimum completed turns"
+                  />
+                  <Text className="text-base text-foreground-muted">completed turns</Text>
+                </View>
+              </View>
+            </>
           ) : null}
         </>
       ) : null}

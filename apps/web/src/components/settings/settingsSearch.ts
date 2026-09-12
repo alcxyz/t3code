@@ -173,10 +173,30 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "automatic-thread-title-frequency",
-    title: "Automatic title update frequency",
+    title: "Automatic title update policy",
     to: "/settings/general",
     targetId: "automatic-thread-titles",
-    searchTerms: ["rename rate limit rare balanced often custom rolling window projects threads"],
+    searchTerms: [
+      "rename rate limit rare balanced often custom rolling window minimum age completed turns eligibility projects threads",
+    ],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-minimum-age",
+    title: "Minimum age for automatic title updates",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename eligibility minutes old thread custom threshold"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-minimum-turns",
+    title: "Minimum completed turns for automatic title updates",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: [
+      "rename eligibility agent response work cycle tool calls progress custom threshold",
+    ],
     requiresAutomaticThreadTitles: true,
   },
   {

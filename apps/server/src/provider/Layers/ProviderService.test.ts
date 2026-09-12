@@ -4820,6 +4820,7 @@ describe("provider MCP capabilities", () => {
     > = {},
     threadAvailable = true,
     titleRenameQuotaAvailable: boolean | "error" = true,
+    threadTitle = "Browser access test",
   ) =>
     Effect.gen(function* () {
       const issued: Array<McpSessionRegistry.McpCredentialRequest> = [];
@@ -4864,7 +4865,7 @@ describe("provider MCP capabilities", () => {
               yield* decodeBrowserAccessThreadShell({
                 id: threadId,
                 projectId,
-                title: "Browser access test",
+                title: threadTitle,
                 ...(titleSource ? { titleSource } : {}),
                 modelSelection: createModelSelection(codexInstanceId, "gpt-5.4"),
                 runtimeMode: "full-access",
@@ -5015,7 +5016,7 @@ describe("provider MCP capabilities", () => {
 
       assert.deepEqual(issued[0]?.capabilities, ["thread-title"]);
       assert.deepEqual(isTitleRenameAvailable.mock.calls, [
-        [threadId, { maxCount: 1, windowHours: 12 }],
+        [threadId, { maxCount: 1, windowHours: 12, minAgeMinutes: 120, minCompletedTurns: 5 }],
       ]);
       const startInput = codex.startSession.mock.calls[0]?.[0] as
         | ProviderAdapterSessionStartInput
@@ -5047,6 +5048,31 @@ describe("provider MCP capabilities", () => {
         | ProviderAdapterSessionStartInput
         | undefined;
       assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds title guidance during initial title seeding", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-title-initial-seeding");
+      const { issued, codex, isTitleRenameAvailable } = yield* startSessionWith(
+        false,
+        threadId,
+        undefined,
+        true,
+        "automatic",
+        false,
+        {},
+        true,
+        true,
+        "New thread",
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, []);
+      assert.equal(isTitleRenameAvailable.mock.calls.length, 0);
+      const startInput = codex.startSession.mock.calls[0]?.[0] as
+        | ProviderAdapterSessionStartInput
+        | undefined;
+      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: false });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

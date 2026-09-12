@@ -84,6 +84,7 @@ import {
   hasAutomaticThreadTitleRenameQuota,
 } from "../../orchestration/AutomaticThreadTitleRateLimit.ts";
 import { allowsAutomaticThreadTitleUpdate } from "../../orchestration/ThreadTitlePolicy.ts";
+import { DEFAULT_THREAD_TITLE } from "../../orchestration/threadTitles.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -881,6 +882,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         settings.automaticThreadTitles &&
         Option.isSome(thread) &&
         thread.value.titleSource === "automatic" &&
+        thread.value.title !== DEFAULT_THREAD_TITLE &&
         allowsAutomaticThreadTitleUpdate(thread.value, yield* nowIso) &&
         Option.isSome(automaticThreadTitleRateLimit);
       const automaticTitleUpdatesAllowed = automaticTitleLifecycleAllowsUpdates

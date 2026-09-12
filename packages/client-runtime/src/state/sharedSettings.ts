@@ -26,6 +26,8 @@ const SHARED_SERVER_SETTING_KEYS = [
   "automaticThreadTitleRenamePolicy",
   "automaticThreadTitleRenameMaxCount",
   "automaticThreadTitleRenameWindowHours",
+  "automaticThreadTitleRenameMinAgeMinutes",
+  "automaticThreadTitleRenameMinCompletedTurns",
   "continueThreadsAfterServerUpdate",
   "sidebarAutoSettleAfterDays",
   "sidebarAutoSettleOnMerge",
@@ -94,6 +96,8 @@ export function filterSharedServerPatch(
       "automaticThreadTitleRenamePolicy",
       "automaticThreadTitleRenameMaxCount",
       "automaticThreadTitleRenameWindowHours",
+      "automaticThreadTitleRenameMinAgeMinutes",
+      "automaticThreadTitleRenameMinCompletedTurns",
     ]);
   }
   if (capabilities?.threadRestartContinuation !== true) {

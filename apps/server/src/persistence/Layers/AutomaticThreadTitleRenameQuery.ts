@@ -1,6 +1,7 @@
 import { IsoDateTime, NonNegativeInt, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
@@ -16,10 +17,39 @@ const CountSinceInput = Schema.Struct({
   since: IsoDateTime,
 });
 
+const InitialEligibilityInput = Schema.Struct({
+  threadId: ThreadId,
+  createdBefore: IsoDateTime,
+  minCompletedTurns: NonNegativeInt,
+  excludedTitle: Schema.String,
+});
+
+const EligibleThreadRow = Schema.Struct({ threadId: ThreadId });
 const CountRow = Schema.Struct({ count: NonNegativeInt });
 
 const makeAutomaticThreadTitleRenameQuery = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+
+  const findInitiallyEligibleThread = SqlSchema.findOneOption({
+    Request: InitialEligibilityInput,
+    Result: EligibleThreadRow,
+    execute: (input) => sql`
+      SELECT thread.thread_id AS "threadId"
+      FROM projection_threads AS thread
+      WHERE thread.thread_id = ${input.threadId}
+        AND thread.title <> ${input.excludedTitle}
+        AND thread.created_at <= ${input.createdBefore}
+        AND (
+          SELECT COUNT(*)
+          FROM projection_turns AS turn
+          WHERE turn.thread_id = thread.thread_id
+            AND turn.turn_id IS NOT NULL
+            AND turn.state = 'completed'
+            AND turn.completed_at IS NOT NULL
+        ) >= ${input.minCompletedTurns}
+      LIMIT 1
+    `,
+  });
 
   const countSinceRow = SqlSchema.findOne({
     Request: CountSinceInput,
@@ -43,7 +73,17 @@ const makeAutomaticThreadTitleRenameQuery = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("AutomaticThreadTitleRenameQuery.countSince")),
     );
 
-  return AutomaticThreadTitleRenameQuery.of({ countSince });
+  const meetsInitialEligibility: AutomaticThreadTitleRenameQueryShape["meetsInitialEligibility"] = (
+    input,
+  ) =>
+    findInitiallyEligibleThread(input).pipe(
+      Effect.map(Option.isSome),
+      Effect.mapError(
+        toPersistenceSqlError("AutomaticThreadTitleRenameQuery.meetsInitialEligibility"),
+      ),
+    );
+
+  return AutomaticThreadTitleRenameQuery.of({ meetsInitialEligibility, countSince });
 });
 
 export const AutomaticThreadTitleRenameQueryLive = Layer.effect(

@@ -26,6 +26,84 @@ const TestLayer = AutomaticThreadTitleRateLimitLive.pipe(
 
 const tests = it.layer(TestLayer);
 
+const limit = {
+  maxCount: 1,
+  windowHours: 12,
+  minAgeMinutes: 120,
+  minCompletedTurns: 2,
+} as const;
+
+const insertThread = Effect.fn("insertAutomaticTitleThread")(function* (input: {
+  readonly threadId: ThreadId;
+  readonly createdAt: string;
+  readonly title?: string;
+}) {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    INSERT INTO projection_threads (
+      thread_id,
+      project_id,
+      title,
+      model_selection_json,
+      created_at,
+      updated_at
+    ) VALUES (
+      ${input.threadId},
+      'rate-limit-project',
+      ${input.title ?? "Existing title"},
+      '{"provider":"codex","model":"gpt-5.4"}',
+      ${input.createdAt},
+      ${input.createdAt}
+    )
+  `;
+});
+
+const insertTurn = Effect.fn("insertAutomaticTitleTurn")(function* (input: {
+  readonly threadId: ThreadId;
+  readonly turnId: string | null;
+  readonly state: "pending" | "running" | "interrupted" | "completed" | "error";
+  readonly occurredAt: string;
+}) {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    INSERT INTO projection_turns (
+      thread_id,
+      turn_id,
+      state,
+      requested_at,
+      started_at,
+      completed_at,
+      checkpoint_files_json
+    ) VALUES (
+      ${input.threadId},
+      ${input.turnId},
+      ${input.state},
+      ${input.occurredAt},
+      ${input.state === "pending" ? null : input.occurredAt},
+      ${input.state === "completed" || input.state === "interrupted" || input.state === "error" ? input.occurredAt : null},
+      '[]'
+    )
+  `;
+});
+
+const insertEligibleThread = Effect.fn("insertEligibleAutomaticTitleThread")(function* (
+  threadId: ThreadId,
+) {
+  yield* insertThread({ threadId, createdAt: "2026-09-12T09:00:00.000Z" });
+  yield* insertTurn({
+    threadId,
+    turnId: "completed-turn-1",
+    state: "completed",
+    occurredAt: "2026-09-12T09:10:00.000Z",
+  });
+  yield* insertTurn({
+    threadId,
+    turnId: "completed-turn-2",
+    state: "completed",
+    occurredAt: "2026-09-12T09:20:00.000Z",
+  });
+});
+
 const insertEvent = Effect.fn("insertAutomaticTitleEvent")(function* (input: {
   readonly eventId: string;
   readonly threadId: ThreadId;
@@ -70,11 +148,119 @@ const insertEvent = Effect.fn("insertAutomaticTitleEvent")(function* (input: {
 });
 
 tests("AutomaticThreadTitleRateLimit", (it) => {
+  it.effect("requires the age and successfully completed turn thresholds", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-09-12T12:00:00.000Z"));
+      const exactBoundaryThread = ThreadId.make("rate-eligibility-boundary-thread");
+      const tooYoungThread = ThreadId.make("rate-eligibility-young-thread");
+      const oneCompletionShortThread = ThreadId.make("rate-eligibility-turns-thread");
+
+      yield* insertThread({
+        threadId: exactBoundaryThread,
+        createdAt: "2026-09-12T10:00:00.000Z",
+      });
+      yield* insertThread({
+        threadId: tooYoungThread,
+        createdAt: "2026-09-12T10:00:00.001Z",
+      });
+      yield* insertThread({
+        threadId: oneCompletionShortThread,
+        createdAt: "2026-09-12T09:00:00.000Z",
+      });
+
+      for (const threadId of [exactBoundaryThread, tooYoungThread]) {
+        yield* insertTurn({
+          threadId,
+          turnId: `${threadId}-completed-1`,
+          state: "completed",
+          occurredAt: "2026-09-12T10:10:00.000Z",
+        });
+        yield* insertTurn({
+          threadId,
+          turnId: `${threadId}-completed-2`,
+          state: "completed",
+          occurredAt: "2026-09-12T10:20:00.000Z",
+        });
+      }
+
+      yield* insertTurn({
+        threadId: oneCompletionShortThread,
+        turnId: "completed-1",
+        state: "completed",
+        occurredAt: "2026-09-12T09:10:00.000Z",
+      });
+      yield* Effect.forEach(
+        [
+          { turnId: null, state: "pending" as const },
+          { turnId: "running-turn", state: "running" as const },
+          { turnId: "failed-turn", state: "error" as const },
+          { turnId: "interrupted-turn", state: "interrupted" as const },
+        ],
+        ({ turnId, state }) =>
+          insertTurn({
+            threadId: oneCompletionShortThread,
+            turnId,
+            state,
+            occurredAt: "2026-09-12T09:20:00.000Z",
+          }),
+        { discard: true },
+      );
+
+      const rateLimit = yield* AutomaticThreadTitleRateLimit;
+      expect(yield* rateLimit.isAvailable(exactBoundaryThread, limit)).toBe(true);
+      expect(yield* rateLimit.isAvailable(tooYoungThread, limit)).toBe(false);
+      expect(yield* rateLimit.isAvailable(oneCompletionShortThread, limit)).toBe(false);
+
+      yield* insertTurn({
+        threadId: oneCompletionShortThread,
+        turnId: "completed-2",
+        state: "completed",
+        occurredAt: "2026-09-12T09:30:00.000Z",
+      });
+      expect(yield* rateLimit.isAvailable(oneCompletionShortThread, limit)).toBe(true);
+    }),
+  );
+
+  it.effect("withholds permits while the initial placeholder title remains", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-09-12T12:00:00.000Z"));
+      const threadId = ThreadId.make("rate-initial-title-thread");
+      yield* insertThread({
+        threadId,
+        createdAt: "2026-09-12T09:00:00.000Z",
+        title: "New thread",
+      });
+      yield* insertTurn({
+        threadId,
+        turnId: "completed-1",
+        state: "completed",
+        occurredAt: "2026-09-12T09:10:00.000Z",
+      });
+      yield* insertTurn({
+        threadId,
+        turnId: "completed-2",
+        state: "completed",
+        occurredAt: "2026-09-12T09:20:00.000Z",
+      });
+
+      const entered = yield* Ref.make(false);
+      const outcome = yield* (yield* AutomaticThreadTitleRateLimit).withPermit(
+        threadId,
+        limit,
+        Ref.set(entered, true),
+      );
+
+      expect(Option.isNone(outcome)).toBe(true);
+      expect(yield* Ref.get(entered)).toBe(false);
+    }),
+  );
+
   it.effect("counts only durable successful agent renames inside the rolling window", () =>
     Effect.gen(function* () {
       const now = "2026-09-12T12:00:00.000Z";
       yield* TestClock.setTime(Date.parse(now));
       const threadId = ThreadId.make("rate-count-thread");
+      yield* insertEligibleThread(threadId);
       const automaticPayload = {
         threadId,
         title: "Changed title",
@@ -135,13 +321,12 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
       expect(yield* query.countSince({ threadId, since: "2026-09-12T00:00:00.000Z" })).toBe(1);
 
       const rateLimit = yield* AutomaticThreadTitleRateLimit;
-      expect(yield* rateLimit.isAvailable(threadId, { maxCount: 1, windowHours: 12 })).toBe(false);
-      expect(yield* rateLimit.isAvailable(threadId, { maxCount: 2, windowHours: 12 })).toBe(true);
+      expect(yield* rateLimit.isAvailable(threadId, limit)).toBe(false);
+      expect(yield* rateLimit.isAvailable(threadId, { ...limit, maxCount: 2 })).toBe(true);
 
       const availableAfterLimiterRestart = yield* Effect.gen(function* () {
         return yield* (yield* AutomaticThreadTitleRateLimit).isAvailable(threadId, {
-          maxCount: 1,
-          windowHours: 12,
+          ...limit,
         });
       }).pipe(
         Effect.provide(
@@ -159,6 +344,7 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
       const now = "2026-09-12T12:00:00.000Z";
       yield* TestClock.setTime(Date.parse(now));
       const threadId = ThreadId.make("rate-concurrent-thread");
+      yield* insertEligibleThread(threadId);
       const nextId = yield* Ref.make(0);
       const rateLimit = yield* AutomaticThreadTitleRateLimit;
       const update = Effect.gen(function* () {
@@ -180,8 +366,8 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
 
       const outcomes = yield* Effect.all(
         [
-          rateLimit.withPermit(threadId, { maxCount: 1, windowHours: 12 }, update),
-          rateLimit.withPermit(threadId, { maxCount: 1, windowHours: 12 }, update),
+          rateLimit.withPermit(threadId, limit, update),
+          rateLimit.withPermit(threadId, limit, update),
         ],
         { concurrency: "unbounded" },
       );
@@ -196,6 +382,7 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
       const now = "2026-09-12T12:00:00.000Z";
       yield* TestClock.setTime(Date.parse(now));
       const threadId = ThreadId.make("rate-cancelled-thread");
+      yield* insertEligibleThread(threadId);
       const firstStarted = yield* Deferred.make<void>();
       const releaseFirst = yield* Deferred.make<void>();
       const secondEntered = yield* Deferred.make<void>();
@@ -217,7 +404,7 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
       const first = yield* Effect.forkChild(
         rateLimit.withPermit(
           threadId,
-          { maxCount: 1, windowHours: 12 },
+          limit,
           Effect.gen(function* () {
             yield* Deferred.succeed(firstStarted, undefined);
             yield* Deferred.await(releaseFirst);
@@ -230,7 +417,7 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
       const second = yield* Effect.forkChild(
         rateLimit.withPermit(
           threadId,
-          { maxCount: 1, windowHours: 12 },
+          limit,
           Deferred.succeed(secondEntered, undefined).pipe(Effect.andThen(write("second"))),
         ),
       );

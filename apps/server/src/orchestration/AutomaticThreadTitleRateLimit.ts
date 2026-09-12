@@ -9,10 +9,13 @@ import * as Semaphore from "effect/Semaphore";
 
 import type { PersistenceSqlError } from "../persistence/Errors.ts";
 import { AutomaticThreadTitleRenameQuery } from "../persistence/Services/AutomaticThreadTitleRenameQuery.ts";
+import { DEFAULT_THREAD_TITLE } from "./threadTitles.ts";
 
 export interface AutomaticThreadTitleRenameLimit {
   readonly maxCount: number;
   readonly windowHours: number;
+  readonly minAgeMinutes: number;
+  readonly minCompletedTurns: number;
 }
 
 export interface AutomaticThreadTitleRateLimitShape {
@@ -43,6 +46,17 @@ const makeAutomaticThreadTitleRateLimit = Effect.gen(function* () {
     limit: AutomaticThreadTitleRenameLimit,
   ) {
     const now = yield* DateTime.now;
+    const createdBefore = DateTime.formatIso(
+      DateTime.subtract(now, { minutes: limit.minAgeMinutes }),
+    );
+    const meetsInitialEligibility = yield* query.meetsInitialEligibility({
+      threadId,
+      createdBefore,
+      minCompletedTurns: limit.minCompletedTurns,
+      excludedTitle: DEFAULT_THREAD_TITLE,
+    });
+    if (!meetsInitialEligibility) return false;
+
     const since = DateTime.formatIso(DateTime.subtract(now, { hours: limit.windowHours }));
     const count = yield* query.countSince({ threadId, since });
     return count < limit.maxCount;
@@ -79,6 +93,8 @@ export const hasAutomaticThreadTitleRenameQuota = Effect.fn("hasAutomaticThreadT
       | "automaticThreadTitleRenamePolicy"
       | "automaticThreadTitleRenameMaxCount"
       | "automaticThreadTitleRenameWindowHours"
+      | "automaticThreadTitleRenameMinAgeMinutes"
+      | "automaticThreadTitleRenameMinCompletedTurns"
     >,
   ): Effect.fn.Return<boolean, PersistenceSqlError, AutomaticThreadTitleRateLimit> {
     if (!settings.automaticThreadTitles) return false;

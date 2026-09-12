@@ -927,6 +927,22 @@ export const MIN_AUTOMATIC_TITLE_RENAME_COUNT = 1;
 export const MAX_AUTOMATIC_TITLE_RENAME_COUNT = 100;
 export const MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS = 1;
 export const MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS = 720;
+export const MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES = 1;
+export const MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES = 43200;
+export const MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS = 1;
+export const MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS = 100;
+const AutomaticThreadTitleRenameMinAgeMinutes = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+    maximum: MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+  }),
+);
+const AutomaticThreadTitleRenameMinCompletedTurns = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+    maximum: MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+  }),
+);
 const AutomaticThreadTitleRenameMaxCount = Schema.Int.check(
   Schema.isBetween({
     minimum: MIN_AUTOMATIC_TITLE_RENAME_COUNT,
@@ -961,6 +977,12 @@ export const ServerSettings = Schema.Struct({
   ),
   automaticThreadTitleRenameWindowHours: AutomaticThreadTitleRenameWindowHours.pipe(
     Schema.withDecodingDefault(Effect.succeed(12)),
+  ),
+  automaticThreadTitleRenameMinAgeMinutes: AutomaticThreadTitleRenameMinAgeMinutes.pipe(
+    Schema.withDecodingDefault(Effect.succeed(120)),
+  ),
+  automaticThreadTitleRenameMinCompletedTurns: AutomaticThreadTitleRenameMinCompletedTurns.pipe(
+    Schema.withDecodingDefault(Effect.succeed(5)),
   ),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
@@ -1253,6 +1275,12 @@ export const ServerSettingsPatch = Schema.Struct({
   automaticThreadTitleRenamePolicy: Schema.optionalKey(AutomaticThreadTitleRenamePolicy),
   automaticThreadTitleRenameMaxCount: Schema.optionalKey(AutomaticThreadTitleRenameMaxCount),
   automaticThreadTitleRenameWindowHours: Schema.optionalKey(AutomaticThreadTitleRenameWindowHours),
+  automaticThreadTitleRenameMinAgeMinutes: Schema.optionalKey(
+    AutomaticThreadTitleRenameMinAgeMinutes,
+  ),
+  automaticThreadTitleRenameMinCompletedTurns: Schema.optionalKey(
+    AutomaticThreadTitleRenameMinCompletedTurns,
+  ),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),
