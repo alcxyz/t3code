@@ -984,6 +984,15 @@ export const ServerSettings = Schema.Struct({
   automaticThreadTitleRenameMinCompletedTurns: AutomaticThreadTitleRenameMinCompletedTurns.pipe(
     Schema.withDecodingDefault(Effect.succeed(5)),
   ),
+  automaticThreadTitleRenameCooldownMinutes: AutomaticThreadTitleRenameMinAgeMinutes.pipe(
+    Schema.withDecodingDefault(Effect.succeed(45)),
+  ),
+  automaticThreadTitleRenameMinFreshTurns: AutomaticThreadTitleRenameMinCompletedTurns.pipe(
+    Schema.withDecodingDefault(Effect.succeed(2)),
+  ),
+  automaticThreadTitleRenameRollingLimitEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
    * withholds the MCP credential, so the `t3-code` server (and with it every
@@ -1281,6 +1290,13 @@ export const ServerSettingsPatch = Schema.Struct({
   automaticThreadTitleRenameMinCompletedTurns: Schema.optionalKey(
     AutomaticThreadTitleRenameMinCompletedTurns,
   ),
+  automaticThreadTitleRenameCooldownMinutes: Schema.optionalKey(
+    AutomaticThreadTitleRenameMinAgeMinutes,
+  ),
+  automaticThreadTitleRenameMinFreshTurns: Schema.optionalKey(
+    AutomaticThreadTitleRenameMinCompletedTurns,
+  ),
+  automaticThreadTitleRenameRollingLimitEnabled: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),

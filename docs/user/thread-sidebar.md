@@ -77,22 +77,27 @@ agents update a thread's title when its objective meaningfully changes. Title up
 part of agent work; T3 Code does not generate them on a schedule. Snoozed, archived, and settled
 threads are skipped.
 
-Automatic updates wait until the thread meets both the age and completed-turn requirements:
+Automatic updates use separate rules before and after the first feature rename:
 
-| Profile            | Minimum age  | Completed turns | Maximum renames               |
-| ------------------ | ------------ | --------------- | ----------------------------- |
-| Often              | 30 minutes   | 3               | 1 every 6 hours               |
-| Balanced (default) | 2 hours      | 5               | 1 every 12 hours              |
-| Rare               | 6 hours      | 10              | 1 every 24 hours              |
-| Custom             | Your minimum | Your minimum    | Your count and rolling window |
+| Profile            | Before the first feature rename      | After each feature rename                                                 |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------- |
+| Often              | 30 minutes old and 3 completed turns | 15-minute cooldown and 1 fresh completed turn                             |
+| Balanced (default) | 2 hours old and 5 completed turns    | 45-minute cooldown and 2 fresh completed turns                            |
+| Rare               | 6 hours old and 10 completed turns   | 2-hour cooldown and 3 fresh completed turns                               |
+| Custom             | Your minimum age and completed turns | Your cooldown and fresh completed turns, with an optional rolling maximum |
 
-A completed turn is a finished agent response or work cycle, not an individual tool call or progress
-update. The initial title is still generated normally by T3 Code. Eligibility only lets the agent
-consider an update; the objective must still meaningfully change.
+Both conditions in the applicable column must be met. After a successful feature rename, the
+cooldown and fresh-turn count restart together; the initial age and total-turn thresholds no longer
+apply. Fresh turns must start after that rename and finish. The turn containing the rename, tool
+calls, and progress updates do not count as fresh turns.
 
-These limits are per thread, shared across devices, and preserved across server restarts. Reaching
-a rename limit pauses automatic renaming until an earlier rename leaves the rolling window; it
-does not queue a rename for later.
+The initial title is still generated normally by T3 Code and does not start the feature cooldown.
+Eligibility only lets the agent consider an update; the objective must still meaningfully change.
+Presets have no additional daily cap. Custom can limit total renames in a rolling window; existing
+Custom limits remain enabled until you turn them off.
+
+These rules are per thread, shared across devices, and preserved across server restarts. Becoming
+eligible never schedules a rename or wakes a thread; the agent checks during normal work.
 
 Titles you renamed yourself stay protected. Choose **Regenerate title** from a thread's menu when
 you want the agent to replace a protected title and keep it up to date afterward. Manual renames,

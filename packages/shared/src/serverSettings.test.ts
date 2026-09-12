@@ -722,28 +722,51 @@ describe("serverSettings helpers", () => {
 
 describe("automatic thread title rename limits", () => {
   it.each([
-    ["rare", 1, 24, 360, 10],
-    ["balanced", 1, 12, 120, 5],
-    ["often", 1, 6, 30, 3],
-    ["custom", 2, 48, 90, 4],
+    ["rare", 360, 10, 120, 3],
+    ["balanced", 120, 5, 45, 2],
+    ["often", 30, 3, 15, 1],
   ] as const)(
-    "resolves %s while retaining custom settings",
-    (policy, maxCount, windowHours, minAgeMinutes, minCompletedTurns) => {
+    "resolves %s without an overlapping rolling cap",
+    (policy, minAgeMinutes, minCompletedTurns, cooldownMinutes, minFreshTurns) => {
       const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
         automaticThreadTitleRenamePolicy: policy,
         automaticThreadTitleRenameMaxCount: 2,
         automaticThreadTitleRenameWindowHours: 48,
         automaticThreadTitleRenameMinAgeMinutes: 90,
         automaticThreadTitleRenameMinCompletedTurns: 4,
+        automaticThreadTitleRenameCooldownMinutes: 20,
+        automaticThreadTitleRenameMinFreshTurns: 1,
+        automaticThreadTitleRenameRollingLimitEnabled: true,
       });
       expect(resolveAutomaticThreadTitleRenameLimit(settings)).toEqual({
-        maxCount,
-        windowHours,
         minAgeMinutes,
         minCompletedTurns,
+        cooldownMinutes,
+        minFreshTurns,
+        rollingLimit: null,
       });
       expect(settings.automaticThreadTitleRenameMaxCount).toBe(2);
-      expect(settings.automaticThreadTitleRenameWindowHours).toBe(48);
+      expect(settings.automaticThreadTitleRenameMinAgeMinutes).toBe(90);
     },
   );
+
+  it.each([true, false])("makes the custom rolling cap optional: %s", (enabled) => {
+    const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      automaticThreadTitleRenamePolicy: "custom",
+      automaticThreadTitleRenameMaxCount: 2,
+      automaticThreadTitleRenameWindowHours: 48,
+      automaticThreadTitleRenameMinAgeMinutes: 90,
+      automaticThreadTitleRenameMinCompletedTurns: 4,
+      automaticThreadTitleRenameCooldownMinutes: 20,
+      automaticThreadTitleRenameMinFreshTurns: 1,
+      automaticThreadTitleRenameRollingLimitEnabled: enabled,
+    });
+    expect(resolveAutomaticThreadTitleRenameLimit(settings)).toEqual({
+      minAgeMinutes: 90,
+      minCompletedTurns: 4,
+      cooldownMinutes: 20,
+      minFreshTurns: 1,
+      rollingLimit: enabled ? { maxCount: 2, windowHours: 48 } : null,
+    });
+  });
 });

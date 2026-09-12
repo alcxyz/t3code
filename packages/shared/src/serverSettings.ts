@@ -32,21 +32,54 @@ export function resolveAutomaticThreadTitleRenameLimit(
     | "automaticThreadTitleRenameWindowHours"
     | "automaticThreadTitleRenameMinAgeMinutes"
     | "automaticThreadTitleRenameMinCompletedTurns"
+    | "automaticThreadTitleRenameCooldownMinutes"
+    | "automaticThreadTitleRenameMinFreshTurns"
+    | "automaticThreadTitleRenameRollingLimitEnabled"
   >,
-): { maxCount: number; windowHours: number; minAgeMinutes: number; minCompletedTurns: number } {
+): {
+  minAgeMinutes: number;
+  minCompletedTurns: number;
+  cooldownMinutes: number;
+  minFreshTurns: number;
+  rollingLimit: { maxCount: number; windowHours: number } | null;
+} {
   switch (settings.automaticThreadTitleRenamePolicy) {
     case "rare":
-      return { maxCount: 1, windowHours: 24, minAgeMinutes: 360, minCompletedTurns: 10 };
+      return {
+        minAgeMinutes: 360,
+        minCompletedTurns: 10,
+        cooldownMinutes: 120,
+        minFreshTurns: 3,
+        rollingLimit: null,
+      };
     case "balanced":
-      return { maxCount: 1, windowHours: 12, minAgeMinutes: 120, minCompletedTurns: 5 };
+      return {
+        minAgeMinutes: 120,
+        minCompletedTurns: 5,
+        cooldownMinutes: 45,
+        minFreshTurns: 2,
+        rollingLimit: null,
+      };
     case "often":
-      return { maxCount: 1, windowHours: 6, minAgeMinutes: 30, minCompletedTurns: 3 };
+      return {
+        minAgeMinutes: 30,
+        minCompletedTurns: 3,
+        cooldownMinutes: 15,
+        minFreshTurns: 1,
+        rollingLimit: null,
+      };
     case "custom":
       return {
-        maxCount: settings.automaticThreadTitleRenameMaxCount,
-        windowHours: settings.automaticThreadTitleRenameWindowHours,
         minAgeMinutes: settings.automaticThreadTitleRenameMinAgeMinutes,
         minCompletedTurns: settings.automaticThreadTitleRenameMinCompletedTurns,
+        cooldownMinutes: settings.automaticThreadTitleRenameCooldownMinutes,
+        minFreshTurns: settings.automaticThreadTitleRenameMinFreshTurns,
+        rollingLimit: settings.automaticThreadTitleRenameRollingLimitEnabled
+          ? {
+              maxCount: settings.automaticThreadTitleRenameMaxCount,
+              windowHours: settings.automaticThreadTitleRenameWindowHours,
+            }
+          : null,
       };
   }
 }

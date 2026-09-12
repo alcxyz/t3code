@@ -12,10 +12,14 @@ import { AutomaticThreadTitleRenameQuery } from "../persistence/Services/Automat
 import { DEFAULT_THREAD_TITLE } from "./threadTitles.ts";
 
 export interface AutomaticThreadTitleRenameLimit {
-  readonly maxCount: number;
-  readonly windowHours: number;
   readonly minAgeMinutes: number;
   readonly minCompletedTurns: number;
+  readonly cooldownMinutes: number;
+  readonly minFreshTurns: number;
+  readonly rollingLimit: {
+    readonly maxCount: number;
+    readonly windowHours: number;
+  } | null;
 }
 
 export interface AutomaticThreadTitleRateLimitShape {
@@ -46,20 +50,38 @@ const makeAutomaticThreadTitleRateLimit = Effect.gen(function* () {
     limit: AutomaticThreadTitleRenameLimit,
   ) {
     const now = yield* DateTime.now;
-    const createdBefore = DateTime.formatIso(
-      DateTime.subtract(now, { minutes: limit.minAgeMinutes }),
-    );
-    const meetsInitialEligibility = yield* query.meetsInitialEligibility({
-      threadId,
-      createdBefore,
-      minCompletedTurns: limit.minCompletedTurns,
-      excludedTitle: DEFAULT_THREAD_TITLE,
-    });
-    if (!meetsInitialEligibility) return false;
+    const latestRenameAt = yield* query.latestSuccessfulRenameAt(threadId);
+    if (Option.isNone(latestRenameAt)) {
+      const createdBefore = DateTime.formatIso(
+        DateTime.subtract(now, { minutes: limit.minAgeMinutes }),
+      );
+      const meetsInitialEligibility = yield* query.meetsInitialEligibility({
+        threadId,
+        createdBefore,
+        minCompletedTurns: limit.minCompletedTurns,
+        excludedTitle: DEFAULT_THREAD_TITLE,
+      });
+      if (!meetsInitialEligibility) return false;
+    } else {
+      const renamedBefore = DateTime.formatIso(
+        DateTime.subtract(now, { minutes: limit.cooldownMinutes }),
+      );
+      const meetsRecurringEligibility = yield* query.meetsRecurringEligibility({
+        threadId,
+        renamedAt: latestRenameAt.value,
+        renamedBefore,
+        minFreshTurns: limit.minFreshTurns,
+        excludedTitle: DEFAULT_THREAD_TITLE,
+      });
+      if (!meetsRecurringEligibility) return false;
+    }
 
-    const since = DateTime.formatIso(DateTime.subtract(now, { hours: limit.windowHours }));
+    if (limit.rollingLimit === null) return true;
+    const since = DateTime.formatIso(
+      DateTime.subtract(now, { hours: limit.rollingLimit.windowHours }),
+    );
     const count = yield* query.countSince({ threadId, since });
-    return count < limit.maxCount;
+    return count < limit.rollingLimit.maxCount;
   });
 
   const isAvailable: AutomaticThreadTitleRateLimitShape["isAvailable"] = (threadId, limit) =>
@@ -95,6 +117,9 @@ export const hasAutomaticThreadTitleRenameQuota = Effect.fn("hasAutomaticThreadT
       | "automaticThreadTitleRenameWindowHours"
       | "automaticThreadTitleRenameMinAgeMinutes"
       | "automaticThreadTitleRenameMinCompletedTurns"
+      | "automaticThreadTitleRenameCooldownMinutes"
+      | "automaticThreadTitleRenameMinFreshTurns"
+      | "automaticThreadTitleRenameRollingLimitEnabled"
     >,
   ): Effect.fn.Return<boolean, PersistenceSqlError, AutomaticThreadTitleRateLimit> {
     if (!settings.automaticThreadTitles) return false;

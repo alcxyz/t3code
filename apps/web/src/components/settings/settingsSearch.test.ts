@@ -169,6 +169,9 @@ describe("searchSettings", () => {
       "automatic-thread-title-frequency",
       "automatic-thread-title-minimum-age",
       "automatic-thread-title-minimum-turns",
+      "automatic-thread-title-cooldown",
+      "automatic-thread-title-fresh-turns",
+      "automatic-thread-title-rolling-limit",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
   });
@@ -209,6 +212,15 @@ describe("searchSettings", () => {
     );
     expect(searchSettings("minimum age", available).map((item) => item.id)).toContain(
       "automatic-thread-title-minimum-age",
+    );
+    expect(searchSettings("cooldown", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-cooldown",
+    );
+    expect(searchSettings("fresh turns", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-fresh-turns",
+    );
+    expect(searchSettings("rolling limit", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-rolling-limit",
     );
   });
 

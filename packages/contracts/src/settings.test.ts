@@ -460,18 +460,31 @@ describe("ServerSettings automatic thread titles", () => {
     expect(decodeServerSettings({}).automaticThreadTitleRenamePolicy).toBe("balanced");
     expect(decodeServerSettings({}).automaticThreadTitleRenameMinAgeMinutes).toBe(120);
     expect(decodeServerSettings({}).automaticThreadTitleRenameMinCompletedTurns).toBe(5);
+    expect(decodeServerSettings({}).automaticThreadTitleRenameCooldownMinutes).toBe(45);
+    expect(decodeServerSettings({}).automaticThreadTitleRenameMinFreshTurns).toBe(2);
+    expect(decodeServerSettings({}).automaticThreadTitleRenameRollingLimitEnabled).toBe(true);
     const patch = {
       automaticThreadTitleRenamePolicy: "custom",
       automaticThreadTitleRenameMaxCount: 2,
       automaticThreadTitleRenameWindowHours: 48,
       automaticThreadTitleRenameMinAgeMinutes: 90,
       automaticThreadTitleRenameMinCompletedTurns: 4,
+      automaticThreadTitleRenameCooldownMinutes: 20,
+      automaticThreadTitleRenameMinFreshTurns: 1,
+      automaticThreadTitleRenameRollingLimitEnabled: false,
     };
     expect(decodeServerSettingsPatch(patch)).toEqual(patch);
   });
 
   it.each([
     { automaticThreadTitleRenamePolicy: "unlimited" },
+    { automaticThreadTitleRenameCooldownMinutes: 0 },
+    { automaticThreadTitleRenameCooldownMinutes: 43201 },
+    { automaticThreadTitleRenameCooldownMinutes: 1.5 },
+    { automaticThreadTitleRenameMinFreshTurns: 0 },
+    { automaticThreadTitleRenameMinFreshTurns: 101 },
+    { automaticThreadTitleRenameMinFreshTurns: 1.5 },
+    { automaticThreadTitleRenameRollingLimitEnabled: "yes" },
     { automaticThreadTitleRenameMinAgeMinutes: 0 },
     { automaticThreadTitleRenameMinAgeMinutes: 43201 },
     { automaticThreadTitleRenameMinAgeMinutes: 1.5 },

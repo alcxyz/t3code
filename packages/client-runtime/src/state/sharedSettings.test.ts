@@ -95,6 +95,9 @@ describe("splitSharedServerPatch", () => {
       automaticThreadTitleRenameWindowHours: 48,
       automaticThreadTitleRenameMinAgeMinutes: 90,
       automaticThreadTitleRenameMinCompletedTurns: 7,
+      automaticThreadTitleRenameCooldownMinutes: 30,
+      automaticThreadTitleRenameMinFreshTurns: 3,
+      automaticThreadTitleRenameRollingLimitEnabled: false,
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
@@ -109,6 +112,9 @@ describe("splitSharedServerPatch", () => {
       automaticThreadTitleRenameWindowHours: 48,
       automaticThreadTitleRenameMinAgeMinutes: 90,
       automaticThreadTitleRenameMinCompletedTurns: 7,
+      automaticThreadTitleRenameCooldownMinutes: 30,
+      automaticThreadTitleRenameMinFreshTurns: 3,
+      automaticThreadTitleRenameRollingLimitEnabled: false,
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
@@ -126,10 +132,13 @@ describe("pickSharedServerSettings", () => {
     expect(
       Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
     ).toEqual([
+      "automaticThreadTitleRenameCooldownMinutes",
       "automaticThreadTitleRenameMaxCount",
       "automaticThreadTitleRenameMinAgeMinutes",
       "automaticThreadTitleRenameMinCompletedTurns",
+      "automaticThreadTitleRenameMinFreshTurns",
       "automaticThreadTitleRenamePolicy",
+      "automaticThreadTitleRenameRollingLimitEnabled",
       "automaticThreadTitleRenameWindowHours",
       "automaticThreadTitles",
       "continueThreadsAfterServerUpdate",
@@ -153,6 +162,9 @@ describe("filterSharedServerPatch", () => {
         automaticThreadTitleRenameWindowHours: 48,
         automaticThreadTitleRenameMinAgeMinutes: 90,
         automaticThreadTitleRenameMinCompletedTurns: 7,
+        automaticThreadTitleRenameCooldownMinutes: 30,
+        automaticThreadTitleRenameMinFreshTurns: 3,
+        automaticThreadTitleRenameRollingLimitEnabled: false,
         sidebarAutoSettleOnMerge: false,
       };
 
@@ -170,6 +182,21 @@ describe("filterSharedServerPatch", () => {
           threadRestartContinuation: true,
         }),
       ).not.toHaveProperty("automaticThreadTitleRenamePolicy");
+      expect(
+        pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, {
+          threadRestartContinuation: true,
+        }),
+      ).not.toHaveProperty("automaticThreadTitleRenameCooldownMinutes");
+      expect(
+        pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, {
+          threadRestartContinuation: true,
+        }),
+      ).not.toHaveProperty("automaticThreadTitleRenameMinFreshTurns");
+      expect(
+        pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, {
+          threadRestartContinuation: true,
+        }),
+      ).not.toHaveProperty("automaticThreadTitleRenameRollingLimitEnabled");
     },
   );
 
@@ -181,6 +208,9 @@ describe("filterSharedServerPatch", () => {
       automaticThreadTitleRenameWindowHours: 36,
       automaticThreadTitleRenameMinAgeMinutes: 90,
       automaticThreadTitleRenameMinCompletedTurns: 7,
+      automaticThreadTitleRenameCooldownMinutes: 30,
+      automaticThreadTitleRenameMinFreshTurns: 3,
+      automaticThreadTitleRenameRollingLimitEnabled: false,
     };
     const olderServer = {
       environmentId: laptopId,

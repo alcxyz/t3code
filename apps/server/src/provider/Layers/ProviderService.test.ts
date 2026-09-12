@@ -5016,7 +5016,16 @@ describe("provider MCP capabilities", () => {
 
       assert.deepEqual(issued[0]?.capabilities, ["thread-title"]);
       assert.deepEqual(isTitleRenameAvailable.mock.calls, [
-        [threadId, { maxCount: 1, windowHours: 12, minAgeMinutes: 120, minCompletedTurns: 5 }],
+        [
+          threadId,
+          {
+            minAgeMinutes: 120,
+            minCompletedTurns: 5,
+            cooldownMinutes: 45,
+            minFreshTurns: 2,
+            rollingLimit: null,
+          },
+        ],
       ]);
       const startInput = codex.startSession.mock.calls[0]?.[0] as
         | ProviderAdapterSessionStartInput

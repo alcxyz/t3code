@@ -177,7 +177,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     targetId: "automatic-thread-titles",
     searchTerms: [
-      "rename rate limit rare balanced often custom rolling window minimum age completed turns eligibility projects threads",
+      "rename rate rare balanced often custom first recurring cooldown fresh turns eligibility projects threads",
     ],
     requiresAutomaticThreadTitles: true,
   },
@@ -197,6 +197,30 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "rename eligibility agent response work cycle tool calls progress custom threshold",
     ],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-cooldown",
+    title: "Cooldown between automatic title updates",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename recurring after last feature title minutes custom threshold"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-fresh-turns",
+    title: "Fresh turns between automatic title updates",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename recurring completed turns after title custom threshold"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-rolling-limit",
+    title: "Rolling automatic title update limit",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename cap maximum count window hours custom optional"],
     requiresAutomaticThreadTitles: true,
   },
   {

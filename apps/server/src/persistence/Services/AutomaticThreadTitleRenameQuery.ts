@@ -1,6 +1,7 @@
 import { IsoDateTime, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as Option from "effect/Option";
 
 import type { PersistenceSqlError } from "../Errors.ts";
 
@@ -10,6 +11,20 @@ export interface AutomaticThreadTitleRenameQueryShape {
     readonly threadId: ThreadId;
     readonly createdBefore: IsoDateTime;
     readonly minCompletedTurns: number;
+    readonly excludedTitle: string;
+  }) => Effect.Effect<boolean, PersistenceSqlError>;
+
+  /** Latest durable agent title change that actually wrote an automatic title. */
+  readonly latestSuccessfulRenameAt: (
+    threadId: ThreadId,
+  ) => Effect.Effect<Option.Option<IsoDateTime>, PersistenceSqlError>;
+
+  /** Whether enough time and newly started, successfully completed turns followed a rename. */
+  readonly meetsRecurringEligibility: (input: {
+    readonly threadId: ThreadId;
+    readonly renamedAt: IsoDateTime;
+    readonly renamedBefore: IsoDateTime;
+    readonly minFreshTurns: number;
     readonly excludedTitle: string;
   }) => Effect.Effect<boolean, PersistenceSqlError>;
 

@@ -28,6 +28,9 @@ const SHARED_SERVER_SETTING_KEYS = [
   "automaticThreadTitleRenameWindowHours",
   "automaticThreadTitleRenameMinAgeMinutes",
   "automaticThreadTitleRenameMinCompletedTurns",
+  "automaticThreadTitleRenameCooldownMinutes",
+  "automaticThreadTitleRenameMinFreshTurns",
+  "automaticThreadTitleRenameRollingLimitEnabled",
   "continueThreadsAfterServerUpdate",
   "sidebarAutoSettleAfterDays",
   "sidebarAutoSettleOnMerge",
@@ -98,6 +101,9 @@ export function filterSharedServerPatch(
       "automaticThreadTitleRenameWindowHours",
       "automaticThreadTitleRenameMinAgeMinutes",
       "automaticThreadTitleRenameMinCompletedTurns",
+      "automaticThreadTitleRenameCooldownMinutes",
+      "automaticThreadTitleRenameMinFreshTurns",
+      "automaticThreadTitleRenameRollingLimitEnabled",
     ]);
   }
   if (capabilities?.threadRestartContinuation !== true) {

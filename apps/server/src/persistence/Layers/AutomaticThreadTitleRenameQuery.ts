@@ -24,8 +24,17 @@ const InitialEligibilityInput = Schema.Struct({
   excludedTitle: Schema.String,
 });
 
+const RecurringEligibilityInput = Schema.Struct({
+  threadId: ThreadId,
+  renamedAt: IsoDateTime,
+  renamedBefore: IsoDateTime,
+  minFreshTurns: NonNegativeInt,
+  excludedTitle: Schema.String,
+});
+
 const EligibleThreadRow = Schema.Struct({ threadId: ThreadId });
 const CountRow = Schema.Struct({ count: NonNegativeInt });
+const RenameRow = Schema.Struct({ occurredAt: IsoDateTime });
 
 const makeAutomaticThreadTitleRenameQuery = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -67,6 +76,45 @@ const makeAutomaticThreadTitleRenameQuery = Effect.gen(function* () {
     `,
   });
 
+  const findLatestSuccessfulRename = SqlSchema.findOneOption({
+    Request: ThreadId,
+    Result: RenameRow,
+    execute: (threadId) => sql`
+      SELECT occurred_at AS "occurredAt"
+      FROM orchestration_events
+      WHERE aggregate_kind = 'thread'
+        AND stream_id = ${threadId}
+        AND event_type = 'thread.meta-updated'
+        AND command_id LIKE 'agent-thread-title:%'
+        AND json_type(payload_json, '$.title') = 'text'
+        AND json_extract(payload_json, '$.titleSource') = 'automatic'
+      ORDER BY sequence DESC
+      LIMIT 1
+    `,
+  });
+
+  const findRecurringEligibleThread = SqlSchema.findOneOption({
+    Request: RecurringEligibilityInput,
+    Result: EligibleThreadRow,
+    execute: (input) => sql`
+      SELECT thread.thread_id AS "threadId"
+      FROM projection_threads AS thread
+      WHERE thread.thread_id = ${input.threadId}
+        AND thread.title <> ${input.excludedTitle}
+        AND ${input.renamedAt} <= ${input.renamedBefore}
+        AND (
+          SELECT COUNT(*)
+          FROM projection_turns AS turn
+          WHERE turn.thread_id = thread.thread_id
+            AND turn.turn_id IS NOT NULL
+            AND turn.state = 'completed'
+            AND turn.started_at > ${input.renamedAt}
+            AND turn.completed_at IS NOT NULL
+        ) >= ${input.minFreshTurns}
+      LIMIT 1
+    `,
+  });
+
   const countSince: AutomaticThreadTitleRenameQueryShape["countSince"] = (input) =>
     countSinceRow(input).pipe(
       Effect.map((row) => row.count),
@@ -83,7 +131,30 @@ const makeAutomaticThreadTitleRenameQuery = Effect.gen(function* () {
       ),
     );
 
-  return AutomaticThreadTitleRenameQuery.of({ meetsInitialEligibility, countSince });
+  const latestSuccessfulRenameAt: AutomaticThreadTitleRenameQueryShape["latestSuccessfulRenameAt"] =
+    (threadId) =>
+      findLatestSuccessfulRename(threadId).pipe(
+        Effect.map(Option.map((row) => row.occurredAt)),
+        Effect.mapError(
+          toPersistenceSqlError("AutomaticThreadTitleRenameQuery.latestSuccessfulRenameAt"),
+        ),
+      );
+
+  const meetsRecurringEligibility: AutomaticThreadTitleRenameQueryShape["meetsRecurringEligibility"] =
+    (input) =>
+      findRecurringEligibleThread(input).pipe(
+        Effect.map(Option.isSome),
+        Effect.mapError(
+          toPersistenceSqlError("AutomaticThreadTitleRenameQuery.meetsRecurringEligibility"),
+        ),
+      );
+
+  return AutomaticThreadTitleRenameQuery.of({
+    meetsInitialEligibility,
+    latestSuccessfulRenameAt,
+    meetsRecurringEligibility,
+    countSince,
+  });
 });
 
 export const AutomaticThreadTitleRenameQueryLive = Layer.effect(
