@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
+import { it as effectIt } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Ref from "effect/Ref";
+import { resolveUsageLimitsAfterProbe } from "../providerUsageLimits.ts";
 
-import { claudeRateLimitEventToUpdate, claudeUsageResponseToLimits } from "./claudeUsageLimits.ts";
+import {
+  claudeRateLimitEventToUpdate,
+  claudeUsageResponseToLimits,
+  recordClaudeUsageResponse,
+} from "./claudeUsageLimits.ts";
 
 const checkedAt = "2026-07-18T10:00:00.000Z";
 const noNames = { overageIncluded: undefined } as const;
@@ -95,6 +103,23 @@ describe("claudeUsageResponseToLimits", () => {
     ).toEqual({ checkedAt, windows: [], unavailable: { reason: "unsupported" } });
   });
 
+  it("preserves the last quota when a supported account's fetch returns null", () => {
+    const published = claudeUsageResponseToLimits({
+      checkedAt,
+      response: {
+        rate_limits_available: true,
+        rate_limits: { five_hour: { utilization: 54, resets_at: null } },
+      },
+    }).limits;
+    const probed = claudeUsageResponseToLimits({
+      checkedAt: "2026-07-18T10:05:00.000Z",
+      response: { rate_limits_available: true, rate_limits: null },
+    }).limits;
+    expect(probed.unavailable?.reason).toBe("probeFailed");
+    expect(resolveUsageLimitsAfterProbe({ published, probed })).toBe(published);
+    expect(resolveUsageLimitsAfterProbe({ published: undefined, probed })).toBe(probed);
+  });
+
   it("skips a window the endpoint reports without a utilization", () => {
     expect(
       claudeUsageResponseToLimits({
@@ -178,3 +203,20 @@ describe("claudeRateLimitEventToUpdate", () => {
     ).toBeUndefined();
   });
 });
+
+effectIt.effect("retains runtime bucket names through a failed quota fetch", () =>
+  Effect.gen(function* () {
+    const names = { overageIncluded: "Fable" };
+    const namesRef = yield* Ref.make<{ overageIncluded: string | undefined }>(names);
+    yield* recordClaudeUsageResponse(namesRef, {
+      checkedAt,
+      response: { rate_limits_available: true, rate_limits: null },
+    });
+    expect(yield* Ref.get(namesRef)).toEqual(names);
+    yield* recordClaudeUsageResponse(namesRef, {
+      checkedAt,
+      response: { rate_limits_available: false, rate_limits: null },
+    });
+    expect(yield* Ref.get(namesRef)).toEqual(noNames);
+  }),
+);
