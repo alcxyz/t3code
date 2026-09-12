@@ -6,6 +6,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -17,6 +18,8 @@ import {
   AutomaticThreadTitleRateLimitLive,
   type AutomaticThreadTitleRenameLimit,
 } from "./AutomaticThreadTitleRateLimit.ts";
+
+const encodePayload = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const TestLayer = AutomaticThreadTitleRateLimitLive.pipe(
   Layer.provideMerge(AutomaticThreadTitleRenameQueryLive),
@@ -151,7 +154,7 @@ const insertEvent = Effect.fn("insertAutomaticTitleEvent")(function* (input: {
       NULL,
       NULL,
       'server',
-      ${JSON.stringify(input.payload)},
+      ${encodePayload(input.payload)},
       '{}'
     )
   `;

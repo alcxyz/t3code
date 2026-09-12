@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -60,7 +61,7 @@ it.layer(NodeSqliteClient.layerMemory())("historical generated title ownership",
             '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'user'
           )
         `;
-        const payload = JSON.stringify({
+        const payload = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
           title,
           ...(entry.source ? { titleSource: entry.source } : {}),
         });
