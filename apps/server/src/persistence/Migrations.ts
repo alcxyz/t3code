@@ -60,8 +60,8 @@ import Migration0045 from "./Migrations/045_ProjectionProjectsAutoPull.ts";
 import Migration0046 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
 import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
 import Migration0048 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
-import Migration0050 from "./Migrations/050_ProjectionThreadTitleState.ts";
 import Migration0049 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
+import ForkProjectionThreadTitleSource from "./Migrations/ForkProjectionThreadTitleSource.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -123,7 +123,6 @@ const migrationEntries = [
   [47, "ProjectionProjectIcon", Migration0047],
   [48, "ProjectionThreadBranchPullRequest", Migration0048],
   [49, "ProjectionThreadsActiveOrderKey", Migration0049],
-  [50, "ProjectionThreadTitleState", Migration0050],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -161,6 +160,13 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
+  // This fork and the pinned, unmerged title-state PR must not claim a numbered
+  // migration: upstream owns that sequence, and the Effect migrator skips every
+  // id at or below its high-water mark. Keep these extensions idempotent and
+  // outside the shared ledger so a later upstream migration is never suppressed.
+  if (toMigrationInclusive === undefined) {
+    yield* ForkProjectionThreadTitleSource;
+  }
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0
     ? Effect.logDebug("Database schema is current")

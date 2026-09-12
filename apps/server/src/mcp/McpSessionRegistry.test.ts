@@ -74,6 +74,48 @@ it.effect("builds MCP endpoints from the bound server host", () =>
   }),
 );
 
+it.effect("title-only credentials do not grant browser access", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("title-only-thread"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: ["thread-title"],
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect(resolved?.capabilities.has("thread-title")).toBe(true);
+    expect(resolved?.capabilities.has("preview")).toBe(false);
+  }),
+);
+
+it.effect("updates capabilities on an existing token without changing another thread", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const threadId = ThreadId.make("title-toggle-thread");
+    const first = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: [],
+    });
+    const second = yield* registry.issue({
+      threadId: ThreadId.make("other-thread"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: ["preview"],
+    });
+    const token = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const otherToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    yield* registry.updateThreadCapabilities(threadId, ["thread-title"]);
+    expect(Array.from((yield* registry.resolve(token))!.capabilities)).toEqual(["thread-title"]);
+    expect(Array.from((yield* registry.resolve(otherToken))!.capabilities)).toEqual(["preview"]);
+    yield* registry.updateThreadCapabilities(threadId, []);
+    expect((yield* registry.resolve(token))!.capabilities.size).toBe(0);
+    yield* registry.revokeThread(threadId);
+    yield* registry.updateThreadCapabilities(threadId, ["thread-title"]);
+    expect(yield* registry.resolve(token)).toBeUndefined();
+  }),
+);
+
 it.effect("expires credentials once their session stops showing signs of life", () =>
   Effect.gen(function* () {
     let timestamp = 1_000;

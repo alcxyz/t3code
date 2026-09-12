@@ -455,6 +455,61 @@ describe("ServerSettings thread settlement", () => {
   });
 });
 
+describe("ServerSettings automatic thread titles", () => {
+  it("defaults frequency to balanced and preserves custom values in patches", () => {
+    expect(decodeServerSettings({}).automaticThreadTitleRenamePolicy).toBe("balanced");
+    expect(decodeServerSettings({}).automaticThreadTitleRenameMinAgeMinutes).toBe(120);
+    expect(decodeServerSettings({}).automaticThreadTitleRenameMinCompletedTurns).toBe(5);
+    expect(decodeServerSettings({}).automaticThreadTitleRenameCooldownMinutes).toBe(45);
+    expect(decodeServerSettings({}).automaticThreadTitleRenameMinFreshTurns).toBe(2);
+    expect(decodeServerSettings({}).automaticThreadTitleRenameRollingLimitEnabled).toBe(true);
+    const patch = {
+      automaticThreadTitleRenamePolicy: "custom",
+      automaticThreadTitleRenameMaxCount: 2,
+      automaticThreadTitleRenameWindowHours: 48,
+      automaticThreadTitleRenameMinAgeMinutes: 90,
+      automaticThreadTitleRenameMinCompletedTurns: 4,
+      automaticThreadTitleRenameCooldownMinutes: 20,
+      automaticThreadTitleRenameMinFreshTurns: 1,
+      automaticThreadTitleRenameRollingLimitEnabled: false,
+    };
+    expect(decodeServerSettingsPatch(patch)).toEqual(patch);
+  });
+
+  it.each([
+    { automaticThreadTitleRenamePolicy: "unlimited" },
+    { automaticThreadTitleRenameCooldownMinutes: 0 },
+    { automaticThreadTitleRenameCooldownMinutes: 43201 },
+    { automaticThreadTitleRenameCooldownMinutes: 1.5 },
+    { automaticThreadTitleRenameMinFreshTurns: 0 },
+    { automaticThreadTitleRenameMinFreshTurns: 101 },
+    { automaticThreadTitleRenameMinFreshTurns: 1.5 },
+    { automaticThreadTitleRenameRollingLimitEnabled: "yes" },
+    { automaticThreadTitleRenameMinAgeMinutes: 0 },
+    { automaticThreadTitleRenameMinAgeMinutes: 43201 },
+    { automaticThreadTitleRenameMinAgeMinutes: 1.5 },
+    { automaticThreadTitleRenameMinCompletedTurns: 0 },
+    { automaticThreadTitleRenameMinCompletedTurns: 101 },
+    { automaticThreadTitleRenameMinCompletedTurns: 1.5 },
+    { automaticThreadTitleRenameMaxCount: 0 },
+    { automaticThreadTitleRenameMaxCount: 101 },
+    { automaticThreadTitleRenameMaxCount: 1.5 },
+    { automaticThreadTitleRenameWindowHours: 0 },
+    { automaticThreadTitleRenameWindowHours: 721 },
+    { automaticThreadTitleRenameWindowHours: 1.5 },
+  ])("rejects invalid automatic title limits: %j", (patch) => {
+    expect(() => decodeServerSettings(patch)).toThrow();
+    expect(() => decodeServerSettingsPatch(patch)).toThrow();
+  });
+
+  it("is opt-in and accepts server-authoritative updates", () => {
+    expect(decodeServerSettings({}).automaticThreadTitles).toBe(false);
+    expect(decodeServerSettingsPatch({ automaticThreadTitles: true }).automaticThreadTitles).toBe(
+      true,
+    );
+  });
+});
+
 describe("ClientSettings pull request merge methods", () => {
   it("defaults to no project overrides and accepts supported methods", () => {
     expect(decodeClientSettings({}).pullRequestMergeMethodOverrides).toEqual({});

@@ -619,6 +619,7 @@ export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
+  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
@@ -702,6 +703,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
+  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
@@ -1339,6 +1341,14 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadTitleAutomaticUpdateCommand = Schema.Struct({
+  type: Schema.Literal("thread.title.automatic.update"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  expectedVersion: CommandId,
+  title: TrimmedNonEmptyString,
+});
+
 const ThreadTitleGenerateCompleteCommand = Schema.Struct({
   type: Schema.Literal("thread.title.generate.complete"),
   commandId: CommandId,
@@ -1392,6 +1402,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
+  ThreadTitleAutomaticUpdateCommand,
   ThreadTitleGenerateCompleteCommand,
   ThreadTitleRefineCommand,
   ThreadPullRequestSyncCommand,
@@ -1560,6 +1571,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   // new field while continuing to decode the event stream.
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   title: Schema.optional(TrimmedNonEmptyString),
+  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   /** Intent marker consumed by the title-generation reactor. Keeping this on
       the existing event lets older clients safely ignore the new field. */
   regenerateTitle: Schema.optional(Schema.Literal(true)),

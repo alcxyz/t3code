@@ -148,6 +148,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
+      hasAutomaticThreadTitles: false,
     });
 
     const gatedIds = new Set<string>([
@@ -164,6 +165,13 @@ describe("searchSettings", () => {
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
       "days-before-auto-settle",
+      "automatic-thread-titles",
+      "automatic-thread-title-frequency",
+      "automatic-thread-title-minimum-age",
+      "automatic-thread-title-minimum-turns",
+      "automatic-thread-title-cooldown",
+      "automatic-thread-title-fresh-turns",
+      "automatic-thread-title-rolling-limit",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
   });
@@ -176,6 +184,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: true,
+      hasAutomaticThreadTitles: false,
     });
 
     expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([
@@ -183,6 +192,36 @@ describe("searchSettings", () => {
       "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
+  });
+
+  it("shows automatic thread titles only when the server supports the setting", () => {
+    const available = filterAvailableSettingsSearchItems({
+      hasCloudPublicConfig: false,
+      hasPrimaryEnvironment: false,
+      hasProviderSettingsEnvironment: false,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+      hasAutomaticThreadTitles: true,
+    });
+
+    expect(available.map((item) => item.id)).toContain("automatic-thread-titles");
+    expect(available.map((item) => item.id)).toContain("automatic-thread-title-frequency");
+    expect(searchSettings("completed turns", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-minimum-turns",
+    );
+    expect(searchSettings("minimum age", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-minimum-age",
+    );
+    expect(searchSettings("cooldown", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-cooldown",
+    );
+    expect(searchSettings("fresh turns", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-fresh-turns",
+    );
+    expect(searchSettings("rolling limit", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-rolling-limit",
+    );
   });
 
   it("keeps catalog result ids unique", () => {

@@ -174,6 +174,7 @@ ${browserToolInstructions(browserToolsAvailable)}
 export interface CodexRuntimeInfo {
   readonly model: string;
   readonly reasoningEffort: string;
+  readonly currentThreadTitle?: string;
 }
 
 export function buildCodexDeveloperInstructions(

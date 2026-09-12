@@ -39,10 +39,19 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironments } from "../../state/environments";
 import {
   DEFAULT_SERVER_SETTINGS,
+  MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+  MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+  MAX_AUTOMATIC_TITLE_RENAME_COUNT,
+  MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+  MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+  MIN_AUTOMATIC_TITLE_RENAME_COUNT,
+  MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
+import { resolveAutomaticThreadTitleRenameLimit } from "@t3tools/shared/serverSettings";
 import {
   filterSharedServerPatch,
   findSharedSettingsMismatches,
@@ -60,7 +69,10 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
-import { resolveAgentAwarenessPlatformPresentation } from "./SettingsRouteScreen.logic";
+import {
+  formatAutomaticTitleRenameLimitDescription,
+  resolveAgentAwarenessPlatformPresentation,
+} from "./SettingsRouteScreen.logic";
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
@@ -579,21 +591,27 @@ function GeneralSettingsSection() {
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
-      <AutoSettleSettingsRows />
+      <SharedThreadSettingsRows />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
     </SettingsSection>
   );
 }
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_SERVER_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
+const AUTOMATIC_TITLE_POLICY_OPTIONS = [
+  { value: "rare", label: "Rare", detail: "First 360m + 10 turns; then 120m + 3" },
+  { value: "balanced", label: "Balanced", detail: "First 120m + 5 turns; then 45m + 2" },
+  { value: "often", label: "Often", detail: "First 30m + 3 turns; then 15m + 1" },
+  { value: "custom", label: "Custom", detail: "Set thresholds" },
+] as const;
 
 /**
- * Auto-settlement is a user preference that every server has to hold. Mobile
- * has no primary environment, so the first eligible sync target provides the
- * reference value. Edits fan out to every eligible target, and a mismatch row
- * lets the user push the reference out.
+ * These user preferences must be available to every server that can act on
+ * them. Mobile has no primary environment, so the first eligible sync target
+ * provides the reference value. Edits fan out to every eligible target, and a
+ * mismatch row lets the user push the reference out.
  */
-function AutoSettleSettingsRows() {
+function SharedThreadSettingsRows() {
   const { environments } = useEnvironments();
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: "server settings update",
@@ -603,8 +621,19 @@ function AutoSettleSettingsRows() {
   const syncTargets = environments.filter(supportsSharedSettingsSync);
   const reference = syncTargets[0] ?? null;
   const referenceSettings = reference?.serverConfig?.settings ?? null;
+  const titleTargets = syncTargets.filter(
+    (environment) =>
+      environment.serverConfig?.environment.capabilities.automaticThreadTitles === true,
+  );
+  const titleReferenceSettings = titleTargets[0]?.serverConfig?.settings ?? null;
 
   const [daysDraft, setDaysDraft] = useState<string | null>(null);
+  const [titleCountDraft, setTitleCountDraft] = useState<string | null>(null);
+  const [titleWindowDraft, setTitleWindowDraft] = useState<string | null>(null);
+  const [titleMinAgeDraft, setTitleMinAgeDraft] = useState<string | null>(null);
+  const [titleMinTurnsDraft, setTitleMinTurnsDraft] = useState<string | null>(null);
+  const [titleCooldownDraft, setTitleCooldownDraft] = useState<string | null>(null);
+  const [titleFreshTurnsDraft, setTitleFreshTurnsDraft] = useState<string | null>(null);
 
   if (reference === null || referenceSettings === null) {
     return null;
@@ -612,6 +641,12 @@ function AutoSettleSettingsRows() {
 
   const writeToAll = (patch: ServerSettingsPatch) => {
     for (const environment of syncTargets) {
+      void updateSettings({ environmentId: environment.environmentId, input: { patch } });
+    }
+  };
+
+  const writeTitleSettingsToAll = (patch: ServerSettingsPatch) => {
+    for (const environment of titleTargets) {
       void updateSettings({ environmentId: environment.environmentId, input: { patch } });
     }
   };
@@ -630,6 +665,35 @@ function AutoSettleSettingsRows() {
   });
 
   const afterDays = referenceSettings.sidebarAutoSettleAfterDays;
+  const titleRenameLimit = titleReferenceSettings
+    ? resolveAutomaticThreadTitleRenameLimit(titleReferenceSettings)
+    : null;
+  const commitTitleLimit = (
+    draftValue: string | null,
+    currentValue: number,
+    minimum: number,
+    maximum: number,
+    patchKey:
+      | "automaticThreadTitleRenameMaxCount"
+      | "automaticThreadTitleRenameWindowHours"
+      | "automaticThreadTitleRenameMinAgeMinutes"
+      | "automaticThreadTitleRenameMinCompletedTurns"
+      | "automaticThreadTitleRenameCooldownMinutes"
+      | "automaticThreadTitleRenameMinFreshTurns",
+    clearDraft: () => void,
+  ) => {
+    const draft = (draftValue ?? "").trim();
+    clearDraft();
+    const parsed = /^\d+$/.test(draft) ? Number(draft) : Number.NaN;
+    if (
+      Number.isInteger(parsed) &&
+      parsed >= minimum &&
+      parsed <= maximum &&
+      parsed !== currentValue
+    ) {
+      writeTitleSettingsToAll({ [patchKey]: parsed });
+    }
+  };
   const commitDays = () => {
     const draft = (daysDraft ?? "").trim();
     setDaysDraft(null);
@@ -648,6 +712,291 @@ function AutoSettleSettingsRows() {
 
   return (
     <>
+      {titleReferenceSettings ? (
+        <>
+          <SettingsSwitchRow
+            icon="textformat.size"
+            label="Keep thread titles up to date"
+            subtitle="Agents update titles for meaningful objective changes. Snoozed, archived, and settled threads are skipped; manual titles stay protected."
+            value={titleReferenceSettings.automaticThreadTitles}
+            onValueChange={(value) => writeTitleSettingsToAll({ automaticThreadTitles: value })}
+          />
+          {titleReferenceSettings.automaticThreadTitles && titleRenameLimit ? (
+            <View className="gap-3 border-t border-border-subtle p-4">
+              <View className="gap-1">
+                <Text className="text-lg text-foreground">Automatic title update frequency</Text>
+                <Text className="text-sm leading-normal text-foreground-muted">
+                  {formatAutomaticTitleRenameLimitDescription(titleRenameLimit)}
+                </Text>
+              </View>
+              <View className="flex-row flex-wrap gap-2">
+                {AUTOMATIC_TITLE_POLICY_OPTIONS.map((option) => {
+                  const selected =
+                    titleReferenceSettings.automaticThreadTitleRenamePolicy === option.value;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      onPress={() =>
+                        writeTitleSettingsToAll({
+                          automaticThreadTitleRenamePolicy: option.value,
+                        })
+                      }
+                      className={
+                        selected
+                          ? "min-w-[46%] flex-1 rounded-xl border-2 border-primary bg-subtle px-3 py-2"
+                          : "min-w-[46%] flex-1 rounded-xl border border-border bg-card px-3 py-2"
+                      }
+                    >
+                      <Text className="text-base text-foreground">{option.label}</Text>
+                      <Text className="text-sm text-foreground-muted">{option.detail}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+          {titleReferenceSettings.automaticThreadTitles &&
+          titleReferenceSettings.automaticThreadTitleRenamePolicy === "custom" ? (
+            <>
+              <SettingsSwitchRow
+                icon="clock"
+                label="Rolling title update limit"
+                subtitle="Cap automatic updates within a rolling time window"
+                value={titleReferenceSettings.automaticThreadTitleRenameRollingLimitEnabled}
+                onValueChange={(value) =>
+                  writeTitleSettingsToAll({
+                    automaticThreadTitleRenameRollingLimitEnabled: value,
+                  })
+                }
+              />
+              {titleReferenceSettings.automaticThreadTitleRenameRollingLimitEnabled ? (
+                <View className="gap-3 border-t border-border-subtle p-4">
+                  <Text className="text-lg text-foreground">Rolling limit</Text>
+                  <View className="flex-row items-center gap-3">
+                    <TextInput
+                      className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                      keyboardType="number-pad"
+                      returnKeyType="done"
+                      value={
+                        titleCountDraft ??
+                        String(titleReferenceSettings.automaticThreadTitleRenameMaxCount)
+                      }
+                      onChangeText={setTitleCountDraft}
+                      onBlur={() =>
+                        commitTitleLimit(
+                          titleCountDraft,
+                          titleReferenceSettings.automaticThreadTitleRenameMaxCount,
+                          MIN_AUTOMATIC_TITLE_RENAME_COUNT,
+                          MAX_AUTOMATIC_TITLE_RENAME_COUNT,
+                          "automaticThreadTitleRenameMaxCount",
+                          () => setTitleCountDraft(null),
+                        )
+                      }
+                      onSubmitEditing={() =>
+                        commitTitleLimit(
+                          titleCountDraft,
+                          titleReferenceSettings.automaticThreadTitleRenameMaxCount,
+                          MIN_AUTOMATIC_TITLE_RENAME_COUNT,
+                          MAX_AUTOMATIC_TITLE_RENAME_COUNT,
+                          "automaticThreadTitleRenameMaxCount",
+                          () => setTitleCountDraft(null),
+                        )
+                      }
+                      accessibilityLabel="Automatic title update count"
+                    />
+                    <Text className="text-base text-foreground-muted">updates per</Text>
+                    <TextInput
+                      className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                      keyboardType="number-pad"
+                      returnKeyType="done"
+                      value={
+                        titleWindowDraft ??
+                        String(titleReferenceSettings.automaticThreadTitleRenameWindowHours)
+                      }
+                      onChangeText={setTitleWindowDraft}
+                      onBlur={() =>
+                        commitTitleLimit(
+                          titleWindowDraft,
+                          titleReferenceSettings.automaticThreadTitleRenameWindowHours,
+                          MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+                          MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+                          "automaticThreadTitleRenameWindowHours",
+                          () => setTitleWindowDraft(null),
+                        )
+                      }
+                      onSubmitEditing={() =>
+                        commitTitleLimit(
+                          titleWindowDraft,
+                          titleReferenceSettings.automaticThreadTitleRenameWindowHours,
+                          MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+                          MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+                          "automaticThreadTitleRenameWindowHours",
+                          () => setTitleWindowDraft(null),
+                        )
+                      }
+                      accessibilityLabel="Automatic title update window in hours"
+                    />
+                    <Text className="text-base text-foreground-muted">hours</Text>
+                  </View>
+                </View>
+              ) : null}
+              <View className="gap-3 border-t border-border-subtle p-4">
+                <View className="gap-1">
+                  <Text className="text-lg text-foreground">First title eligibility</Text>
+                  <Text className="text-sm leading-normal text-foreground-muted">
+                    For the first automatic title update, both the thread age and completed-turn
+                    thresholds must be met.
+                  </Text>
+                </View>
+                <View className="flex-row flex-wrap items-center gap-3">
+                  <TextInput
+                    className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    value={
+                      titleMinAgeDraft ??
+                      String(titleReferenceSettings.automaticThreadTitleRenameMinAgeMinutes)
+                    }
+                    onChangeText={setTitleMinAgeDraft}
+                    onBlur={() =>
+                      commitTitleLimit(
+                        titleMinAgeDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinAgeMinutes,
+                        MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        "automaticThreadTitleRenameMinAgeMinutes",
+                        () => setTitleMinAgeDraft(null),
+                      )
+                    }
+                    onSubmitEditing={() =>
+                      commitTitleLimit(
+                        titleMinAgeDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinAgeMinutes,
+                        MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        "automaticThreadTitleRenameMinAgeMinutes",
+                        () => setTitleMinAgeDraft(null),
+                      )
+                    }
+                    accessibilityLabel="Minimum thread age in minutes"
+                  />
+                  <Text className="text-base text-foreground-muted">minutes old and</Text>
+                  <TextInput
+                    className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    value={
+                      titleMinTurnsDraft ??
+                      String(titleReferenceSettings.automaticThreadTitleRenameMinCompletedTurns)
+                    }
+                    onChangeText={setTitleMinTurnsDraft}
+                    onBlur={() =>
+                      commitTitleLimit(
+                        titleMinTurnsDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinCompletedTurns,
+                        MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        "automaticThreadTitleRenameMinCompletedTurns",
+                        () => setTitleMinTurnsDraft(null),
+                      )
+                    }
+                    onSubmitEditing={() =>
+                      commitTitleLimit(
+                        titleMinTurnsDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinCompletedTurns,
+                        MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        "automaticThreadTitleRenameMinCompletedTurns",
+                        () => setTitleMinTurnsDraft(null),
+                      )
+                    }
+                    accessibilityLabel="Minimum completed turns"
+                  />
+                  <Text className="text-base text-foreground-muted">completed turns</Text>
+                </View>
+              </View>
+              <View className="gap-3 border-t border-border-subtle p-4">
+                <View className="gap-1">
+                  <Text className="text-lg text-foreground">Recurring title eligibility</Text>
+                  <Text className="text-sm leading-normal text-foreground-muted">
+                    After the last feature-generated title update, both thresholds must be met.
+                    Fresh turns start after the rename; the turn containing the rename does not
+                    count.
+                  </Text>
+                </View>
+                <View className="flex-row flex-wrap items-center gap-3">
+                  <TextInput
+                    className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    value={
+                      titleCooldownDraft ??
+                      String(titleReferenceSettings.automaticThreadTitleRenameCooldownMinutes)
+                    }
+                    onChangeText={setTitleCooldownDraft}
+                    onBlur={() =>
+                      commitTitleLimit(
+                        titleCooldownDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameCooldownMinutes,
+                        MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        "automaticThreadTitleRenameCooldownMinutes",
+                        () => setTitleCooldownDraft(null),
+                      )
+                    }
+                    onSubmitEditing={() =>
+                      commitTitleLimit(
+                        titleCooldownDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameCooldownMinutes,
+                        MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+                        "automaticThreadTitleRenameCooldownMinutes",
+                        () => setTitleCooldownDraft(null),
+                      )
+                    }
+                    accessibilityLabel="Title update cooldown in minutes"
+                  />
+                  <Text className="text-base text-foreground-muted">minutes and</Text>
+                  <TextInput
+                    className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    value={
+                      titleFreshTurnsDraft ??
+                      String(titleReferenceSettings.automaticThreadTitleRenameMinFreshTurns)
+                    }
+                    onChangeText={setTitleFreshTurnsDraft}
+                    onBlur={() =>
+                      commitTitleLimit(
+                        titleFreshTurnsDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinFreshTurns,
+                        MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        "automaticThreadTitleRenameMinFreshTurns",
+                        () => setTitleFreshTurnsDraft(null),
+                      )
+                    }
+                    onSubmitEditing={() =>
+                      commitTitleLimit(
+                        titleFreshTurnsDraft,
+                        titleReferenceSettings.automaticThreadTitleRenameMinFreshTurns,
+                        MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+                        "automaticThreadTitleRenameMinFreshTurns",
+                        () => setTitleFreshTurnsDraft(null),
+                      )
+                    }
+                    accessibilityLabel="Fresh completed turns"
+                  />
+                  <Text className="text-base text-foreground-muted">new completed turns</Text>
+                </View>
+              </View>
+            </>
+          ) : null}
+        </>
+      ) : null}
       <SettingsSwitchRow
         icon="arrow.triangle.branch"
         label="Auto-settle merged threads"

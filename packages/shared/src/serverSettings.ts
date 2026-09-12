@@ -24,6 +24,66 @@ import {
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownOption(ServerSettingsJson);
 
+export function resolveAutomaticThreadTitleRenameLimit(
+  settings: Pick<
+    ServerSettings,
+    | "automaticThreadTitleRenamePolicy"
+    | "automaticThreadTitleRenameMaxCount"
+    | "automaticThreadTitleRenameWindowHours"
+    | "automaticThreadTitleRenameMinAgeMinutes"
+    | "automaticThreadTitleRenameMinCompletedTurns"
+    | "automaticThreadTitleRenameCooldownMinutes"
+    | "automaticThreadTitleRenameMinFreshTurns"
+    | "automaticThreadTitleRenameRollingLimitEnabled"
+  >,
+): {
+  minAgeMinutes: number;
+  minCompletedTurns: number;
+  cooldownMinutes: number;
+  minFreshTurns: number;
+  rollingLimit: { maxCount: number; windowHours: number } | null;
+} {
+  switch (settings.automaticThreadTitleRenamePolicy) {
+    case "rare":
+      return {
+        minAgeMinutes: 360,
+        minCompletedTurns: 10,
+        cooldownMinutes: 120,
+        minFreshTurns: 3,
+        rollingLimit: null,
+      };
+    case "balanced":
+      return {
+        minAgeMinutes: 120,
+        minCompletedTurns: 5,
+        cooldownMinutes: 45,
+        minFreshTurns: 2,
+        rollingLimit: null,
+      };
+    case "often":
+      return {
+        minAgeMinutes: 30,
+        minCompletedTurns: 3,
+        cooldownMinutes: 15,
+        minFreshTurns: 1,
+        rollingLimit: null,
+      };
+    case "custom":
+      return {
+        minAgeMinutes: settings.automaticThreadTitleRenameMinAgeMinutes,
+        minCompletedTurns: settings.automaticThreadTitleRenameMinCompletedTurns,
+        cooldownMinutes: settings.automaticThreadTitleRenameCooldownMinutes,
+        minFreshTurns: settings.automaticThreadTitleRenameMinFreshTurns,
+        rollingLimit: settings.automaticThreadTitleRenameRollingLimitEnabled
+          ? {
+              maxCount: settings.automaticThreadTitleRenameMaxCount,
+              windowHours: settings.automaticThreadTitleRenameWindowHours,
+            }
+          : null,
+      };
+  }
+}
+
 export function resolveProjectAgentBrowserAccess(
   settings: Pick<ServerSettings, "enableAgentBrowserAccess" | "projectAgentBrowserAccessOverrides">,
   projectId: ProjectId,

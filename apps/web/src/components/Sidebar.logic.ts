@@ -493,7 +493,8 @@ export interface ThreadStatusPill {
     | "Completed"
     | "Pending Approval"
     | "Awaiting Input"
-    | "Plan Ready";
+    | "Plan Ready"
+    | "Renamed";
   colorClass: string;
   dotClass: string;
   pulse: boolean;
@@ -509,6 +510,7 @@ const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   Connecting: 4,
   "Plan Ready": 3,
   Monitoring: 2,
+  Renamed: 1,
   Completed: 1,
 };
 
@@ -522,6 +524,8 @@ type ThreadStatusInput = Pick<
   | "session"
   | "backgroundLiveness"
 > & {
+  latestUserMessageAt?: string | null | undefined;
+  titleAutoRenamedAt?: string | null | undefined;
   lastVisitedAt?: string | undefined;
 };
 
@@ -962,6 +966,19 @@ export function formatWorkingDurationLabel(elapsedMs: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+/** An automatic rename stays visible until the next user message begins. */
+export function hasActiveAutomaticRename(input: {
+  readonly titleAutoRenamedAt?: string | null | undefined;
+  readonly latestUserMessageAt?: string | null | undefined;
+}): boolean {
+  if (input.titleAutoRenamedAt == null) return false;
+  const renamedAt = Date.parse(input.titleAutoRenamedAt);
+  if (!Number.isFinite(renamedAt)) return false;
+  if (input.latestUserMessageAt == null) return true;
+  const latestUserMessageAt = Date.parse(input.latestUserMessageAt);
+  return Number.isFinite(latestUserMessageAt) && renamedAt > latestUserMessageAt;
+}
+
 export function resolveThreadStatusPill(input: {
   thread: ThreadStatusInput;
 }): ThreadStatusPill | null {
@@ -1037,6 +1054,15 @@ export function resolveThreadStatusPill(input: {
       label: "Monitoring",
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: false,
+    };
+  }
+
+  if (hasActiveAutomaticRename(thread)) {
+    return {
+      label: "Renamed",
+      colorClass: "text-amber-600 dark:text-amber-300/90",
+      dotClass: "bg-amber-500 dark:bg-amber-300/90",
       pulse: false,
     };
   }

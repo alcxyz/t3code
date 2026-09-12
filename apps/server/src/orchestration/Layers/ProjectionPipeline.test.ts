@@ -524,10 +524,17 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           readonly activeOrderKey: string | null;
           readonly updatedAt: string;
         }>`
-          SELECT active_order_key AS "activeOrderKey", updated_at AS "updatedAt"
+          SELECT
+            active_order_key AS "activeOrderKey",
+            updated_at AS "updatedAt"
           FROM projection_threads WHERE thread_id = 'thread-1'
         `;
-        assert.deepEqual(rows, [{ activeOrderKey: "gm", updatedAt: orderUpdatedAt }]);
+        assert.deepEqual(rows, [
+          {
+            activeOrderKey: "gm",
+            updatedAt: orderUpdatedAt,
+          },
+        ]);
       }
 
       // Settled lifecycle through the DB pipeline: thread.settled writes the
@@ -4014,6 +4021,93 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
         WHERE projector = 'projection.projects'
       `;
       assert.deepEqual(projectorRows, [{ lastAppliedSequence: 1 }]);
+    }),
+  );
+
+  it.effect("round-trips title state and rename badge through shell and detail snapshots", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const snapshots = yield* ProjectionSnapshotQuery;
+      const projectId = ProjectId.make("project-title-source");
+      const threadId = ThreadId.make("thread-title-source");
+      const createdAt = "2026-01-01T00:00:00.000Z";
+
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-title-source-project"),
+        projectId,
+        title: "Title Source Project",
+        workspaceRoot: "/tmp/project-title-source",
+        createdAt,
+      });
+      yield* engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-title-source-thread"),
+        threadId,
+        projectId,
+        title: "Automatic title",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdAt,
+      });
+
+      yield* engine.dispatch({
+        type: "thread.title.generate.complete",
+        commandId: CommandId.make("initial-title"),
+        threadId,
+        expectedTitle: "Automatic title",
+        expectedVersion: null,
+        title: "Initial generated title",
+        needsRefinement: false,
+      });
+      const automaticShell = yield* snapshots.getThreadShellById(threadId);
+      const automaticDetail = yield* snapshots.getThreadDetailById(threadId);
+      assert.deepEqual(Option.getOrThrow(automaticShell).titleState, {
+        source: "generated",
+        version: CommandId.make("initial-title"),
+        needsRefinement: false,
+      });
+      assert.deepEqual(
+        Option.getOrThrow(automaticDetail).titleState,
+        Option.getOrThrow(automaticShell).titleState,
+      );
+      assert.isNull(Option.getOrThrow(automaticShell).titleAutoRenamedAt);
+
+      yield* engine.dispatch({
+        type: "thread.title.automatic.update",
+        commandId: CommandId.make("agent-thread-title:cue-test"),
+        threadId,
+        expectedVersion: CommandId.make("initial-title"),
+        title: "A more specific objective",
+      });
+      const renamedShell = Option.getOrThrow(yield* snapshots.getThreadShellById(threadId));
+      const renamedDetail = Option.getOrThrow(yield* snapshots.getThreadDetailById(threadId));
+      assert.isString(renamedShell.titleAutoRenamedAt);
+      assert.strictEqual(renamedDetail.titleAutoRenamedAt, renamedShell.titleAutoRenamedAt);
+
+      yield* engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-title-source-manual"),
+        threadId,
+        title: "Manual title",
+      });
+
+      const userShell = yield* snapshots.getThreadShellById(threadId);
+      const userDetail = yield* snapshots.getThreadDetailById(threadId);
+      assert.deepEqual(Option.getOrThrow(userShell).titleState, {
+        source: "manual",
+        version: CommandId.make("cmd-title-source-manual"),
+        needsRefinement: false,
+      });
+      assert.deepEqual(
+        Option.getOrThrow(userDetail).titleState,
+        Option.getOrThrow(userShell).titleState,
+      );
+      assert.isNull(Option.getOrThrow(userShell).titleAutoRenamedAt);
+      assert.isNull(Option.getOrThrow(userDetail).titleAutoRenamedAt);
     }),
   );
 

@@ -195,6 +195,60 @@ describe("buildTurnStartParams", () => {
     NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
   });
 
+  it.effect("refreshes automatic thread-title guidance in each turn payload", () =>
+    Effect.gen(function* () {
+      const titledTurn = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Continue the task",
+        interactionMode: "default",
+        currentThreadTitle: "Investigate websocket reconnects",
+      });
+      const titledInstructions = titledTurn.collaborationMode?.settings.developer_instructions;
+
+      NodeAssert.ok(titledInstructions);
+      NodeAssert.doesNotMatch(titledInstructions, /<thread_title_updates>/);
+      const titleInput = titledTurn.input[0];
+      NodeAssert.equal(titleInput?.type, "text");
+      if (titleInput?.type !== "text") throw new Error("Expected title guidance as text input");
+      NodeAssert.match(titleInput.text, /<thread_title_updates>/);
+      NodeAssert.match(titleInput.text, /rename_current_thread/);
+      NodeAssert.match(titleInput.text, /Investigate websocket reconnects/);
+      NodeAssert.equal(titledTurn.input[1]?.type, "text");
+
+      const untitledTurn = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Continue the task",
+        interactionMode: "default",
+      });
+      const untitledInstructions = untitledTurn.collaborationMode?.settings.developer_instructions;
+
+      NodeAssert.ok(untitledInstructions);
+      NodeAssert.doesNotMatch(untitledInstructions, /<thread_title_updates>/);
+      NodeAssert.doesNotMatch(untitledInstructions, /rename_current_thread/);
+      NodeAssert.doesNotMatch(untitledInstructions, /Investigate websocket reconnects/);
+      NodeAssert.deepStrictEqual(untitledTurn.input, [{ type: "text", text: "Continue the task" }]);
+    }),
+  );
+
+  it.effect("delivers title guidance even without collaboration-mode settings", () =>
+    Effect.gen(function* () {
+      const turn = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Implement the fix",
+        currentThreadTitle: "Investigate the bug",
+      });
+      NodeAssert.equal(turn.collaborationMode, undefined);
+      const context = turn.input[0];
+      NodeAssert.equal(context?.type, "text");
+      if (context?.type !== "text") throw new Error("Expected title guidance as text input");
+      NodeAssert.match(context.text, /<thread_title_updates>/);
+      NodeAssert.deepStrictEqual(turn.input[1], { type: "text", text: "Implement the fix" });
+    }),
+  );
+
   it.effect("routes approvals to the auto reviewer in auto mode", () =>
     Effect.gen(function* () {
       const params = yield* buildTurnStartParams({

@@ -43,6 +43,8 @@ export function useAvailableSettingsSearchItems() {
         }),
         hasThreadAutoSettlement:
           primaryServerConfig?.environment.capabilities.threadAutoSettlement === true,
+        hasAutomaticThreadTitles:
+          primaryServerConfig?.environment.capabilities.automaticThreadTitles === true,
       }),
     [
       canManageLocalBackend,

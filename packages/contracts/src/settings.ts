@@ -922,6 +922,40 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
+const AutomaticThreadTitleRenamePolicy = Schema.Literals(["rare", "balanced", "often", "custom"]);
+export const MIN_AUTOMATIC_TITLE_RENAME_COUNT = 1;
+export const MAX_AUTOMATIC_TITLE_RENAME_COUNT = 100;
+export const MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS = 1;
+export const MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS = 720;
+export const MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES = 1;
+export const MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES = 43200;
+export const MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS = 1;
+export const MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS = 100;
+const AutomaticThreadTitleRenameMinAgeMinutes = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+    maximum: MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
+  }),
+);
+const AutomaticThreadTitleRenameMinCompletedTurns = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+    maximum: MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
+  }),
+);
+const AutomaticThreadTitleRenameMaxCount = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AUTOMATIC_TITLE_RENAME_COUNT,
+    maximum: MAX_AUTOMATIC_TITLE_RENAME_COUNT,
+  }),
+);
+const AutomaticThreadTitleRenameWindowHours = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+    maximum: MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+  }),
+);
+
 export const ServerSettings = Schema.Struct({
   // Legacy token-by-token assistant output. Deliberately a fresh key (was
   // `enableAssistantStreaming`): decoding drops the old key, so everyone,
@@ -933,6 +967,31 @@ export const ServerSettings = Schema.Struct({
   // Retain the update-era key; recovery now needs an environment-owned opt-in.
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  automaticThreadTitles: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  automaticThreadTitleRenamePolicy: AutomaticThreadTitleRenamePolicy.pipe(
+    Schema.withDecodingDefault(Effect.succeed("balanced" as const)),
+  ),
+  automaticThreadTitleRenameMaxCount: AutomaticThreadTitleRenameMaxCount.pipe(
+    Schema.withDecodingDefault(Effect.succeed(1)),
+  ),
+  automaticThreadTitleRenameWindowHours: AutomaticThreadTitleRenameWindowHours.pipe(
+    Schema.withDecodingDefault(Effect.succeed(12)),
+  ),
+  automaticThreadTitleRenameMinAgeMinutes: AutomaticThreadTitleRenameMinAgeMinutes.pipe(
+    Schema.withDecodingDefault(Effect.succeed(120)),
+  ),
+  automaticThreadTitleRenameMinCompletedTurns: AutomaticThreadTitleRenameMinCompletedTurns.pipe(
+    Schema.withDecodingDefault(Effect.succeed(5)),
+  ),
+  automaticThreadTitleRenameCooldownMinutes: AutomaticThreadTitleRenameMinAgeMinutes.pipe(
+    Schema.withDecodingDefault(Effect.succeed(45)),
+  ),
+  automaticThreadTitleRenameMinFreshTurns: AutomaticThreadTitleRenameMinCompletedTurns.pipe(
+    Schema.withDecodingDefault(Effect.succeed(2)),
+  ),
+  automaticThreadTitleRenameRollingLimitEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
@@ -1221,6 +1280,23 @@ export const ServerSettingsPatch = Schema.Struct({
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
+  automaticThreadTitles: Schema.optionalKey(Schema.Boolean),
+  automaticThreadTitleRenamePolicy: Schema.optionalKey(AutomaticThreadTitleRenamePolicy),
+  automaticThreadTitleRenameMaxCount: Schema.optionalKey(AutomaticThreadTitleRenameMaxCount),
+  automaticThreadTitleRenameWindowHours: Schema.optionalKey(AutomaticThreadTitleRenameWindowHours),
+  automaticThreadTitleRenameMinAgeMinutes: Schema.optionalKey(
+    AutomaticThreadTitleRenameMinAgeMinutes,
+  ),
+  automaticThreadTitleRenameMinCompletedTurns: Schema.optionalKey(
+    AutomaticThreadTitleRenameMinCompletedTurns,
+  ),
+  automaticThreadTitleRenameCooldownMinutes: Schema.optionalKey(
+    AutomaticThreadTitleRenameMinAgeMinutes,
+  ),
+  automaticThreadTitleRenameMinFreshTurns: Schema.optionalKey(
+    AutomaticThreadTitleRenameMinCompletedTurns,
+  ),
+  automaticThreadTitleRenameRollingLimitEnabled: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),

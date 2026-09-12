@@ -16,6 +16,7 @@ import {
   ASSISTANT_CITATION_MAX_TEXT_LENGTH,
   AssistantCitation,
   ApprovalRequestId,
+  CommandId,
   EnvironmentId,
   EventId,
   MessageId,
@@ -60,7 +61,11 @@ import {
   ProviderWorkspaceMissingError,
   type ProviderAdapterError,
 } from "../Errors.ts";
-import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
+import type {
+  ProviderAdapterSendTurnInput,
+  ProviderAdapterSessionStartInput,
+  ProviderAdapterShape,
+} from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
@@ -68,6 +73,7 @@ import { makeProviderServiceLive } from "./ProviderService.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import {
   makeSqlitePersistenceLive,
@@ -78,6 +84,9 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { AutomaticThreadTitleRateLimit } from "../../orchestration/AutomaticThreadTitleRateLimit.ts";
+import type * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
@@ -4796,7 +4805,7 @@ boundedListing.layer("ProviderServiceLive session listing", (it) => {
 
 const decodeBrowserAccessThreadShell = Schema.decodeUnknownEffect(OrchestrationThreadShell);
 
-describe("agent browser access", () => {
+describe("provider MCP capabilities", () => {
   const revokedThreads: Array<ThreadId> = [];
   const projectId = ProjectId.make("project-browser-access");
 
@@ -4804,9 +4813,21 @@ describe("agent browser access", () => {
     enableAgentBrowserAccess: boolean,
     threadId: ThreadId,
     projectOverride?: boolean,
+    automaticThreadTitles = false,
+    titleStateSource: "generated" | "manual" | null = "generated",
+    sendTurn = false,
+    lifecycle: Partial<
+      Pick<
+        typeof OrchestrationThreadShell.Type,
+        "archivedAt" | "settledOverride" | "snoozedUntil" | "titleRegeneration"
+      >
+    > = {},
+    threadAvailable = true,
+    titleRenameQuotaAvailable: boolean | "error" = true,
+    threadTitle = "Browser access test",
   ) =>
     Effect.gen(function* () {
-      const issued: Array<ThreadId> = [];
+      const issued: Array<McpSessionRegistry.McpCredentialRequest> = [];
       const codex = makeFakeCodexAdapter();
       const providerAdapterLayer = Layer.succeed(
         ProviderAdapterRegistry.ProviderAdapterRegistry,
@@ -4817,6 +4838,11 @@ describe("agent browser access", () => {
       );
       const directoryLayer = ProviderSessionDirectoryLive.pipe(
         Layer.provide(runtimeRepositoryLayer),
+      );
+      const isTitleRenameAvailable = vi.fn(() =>
+        titleRenameQuotaAvailable === "error"
+          ? Effect.fail(new PersistenceSqlError({ operation: "test-title-quota" }))
+          : Effect.succeed(titleRenameQuotaAvailable),
       );
       const projectionLayer = Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getTurnStartMessage: () => Effect.die("unused"),
@@ -4838,11 +4864,20 @@ describe("agent browser access", () => {
         getThreadShellById: (requestedThreadId) =>
           Effect.gen(function* () {
             assert.equal(requestedThreadId, threadId);
+            if (!threadAvailable) return Option.none();
             return Option.some(
               yield* decodeBrowserAccessThreadShell({
                 id: threadId,
                 projectId,
-                title: "Browser access test",
+                title: threadTitle,
+                titleState:
+                  titleStateSource === null
+                    ? null
+                    : {
+                        source: titleStateSource,
+                        version: CommandId.make("provider-service-title-state"),
+                        needsRefinement: false,
+                      },
                 modelSelection: createModelSelection(codexInstanceId, "gpt-5.4"),
                 runtimeMode: "full-access",
                 branch: null,
@@ -4850,6 +4885,7 @@ describe("agent browser access", () => {
                 latestTurn: null,
                 createdAt: "2026-01-01T00:00:00.000Z",
                 updatedAt: "2026-01-01T00:00:00.000Z",
+                ...lifecycle,
                 session: null,
                 latestUserMessageAt: null,
                 hasPendingApprovals: false,
@@ -4865,8 +4901,19 @@ describe("agent browser access", () => {
       const providerLayer = makeProviderServiceLive({
         issueMcpCredential: (request) =>
           Effect.sync(() => {
-            issued.push(request.threadId);
-            return undefined;
+            issued.push(request);
+            return automaticThreadTitles
+              ? {
+                  config: {
+                    environmentId: EnvironmentId.make("environment-mcp-capabilities"),
+                    threadId: request.threadId,
+                    providerSessionId: `provider-session-${request.threadId}`,
+                    providerInstanceId: request.providerInstanceId,
+                    endpoint: "http://127.0.0.1:3000/mcp",
+                    authorizationHeader: "Bearer test-token",
+                  },
+                }
+              : undefined;
           }),
         revokeMcpCredential: (revoked) => Effect.sync(() => void revokedThreads.push(revoked)),
       }).pipe(
@@ -4874,8 +4921,18 @@ describe("agent browser access", () => {
         Layer.provide(directoryLayer),
         Layer.provide(projectionLayer),
         Layer.provide(
+          Layer.succeed(
+            AutomaticThreadTitleRateLimit,
+            AutomaticThreadTitleRateLimit.of({
+              isAvailable: isTitleRenameAvailable,
+              withPermit: (_threadId, _limit, effect) => Effect.map(effect, Option.some),
+            }),
+          ),
+        ),
+        Layer.provide(
           ServerSettings.ServerSettingsService.layerTest({
             enableAgentBrowserAccess,
+            automaticThreadTitles,
             projectAgentBrowserAccessOverrides:
               projectOverride === undefined ? {} : { [projectId]: projectOverride },
           }),
@@ -4892,39 +4949,41 @@ describe("agent browser access", () => {
 
       yield* Effect.gen(function* () {
         const provider = yield* ProviderService.ProviderService;
-        return yield* provider.startSession(threadId, {
+        const session = yield* provider.startSession(threadId, {
           provider: CODEX_DRIVER,
           providerInstanceId: codexInstanceId,
           threadId,
           runtimeMode: "full-access",
         });
+        if (sendTurn) {
+          yield* provider.sendTurn({ threadId, input: "Continue the task" });
+        }
+        return session;
       }).pipe(Effect.provide(providerLayer));
 
-      return issued;
+      McpProviderSession.clearMcpProviderSession(threadId);
+      return { issued, codex, isTitleRenameAvailable };
     });
 
-  // Credential issuance is the observable that matters: it is the only place a
-  // credential is minted, and `/mcp` accepts nothing else, so withholding it is
-  // what actually denies every provider and external MCP client.
-  it.effect("requests no MCP credential when agent browser access is off", () =>
+  it.effect("attaches an MCP credential with no capabilities when optional tools are off", () =>
     Effect.gen(function* () {
-      const issued = yield* startSessionWith(false, asThreadId("thread-browser-off"));
+      const threadId = asThreadId("thread-browser-off");
+      const { issued } = yield* startSessionWith(false, threadId);
 
-      assert.deepEqual(issued, []);
+      assert.deepEqual(issued, [
+        { threadId, providerInstanceId: codexInstanceId, capabilities: [] },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("revokes an already-issued credential when access is off", () =>
+  it.effect("does not grant browser access through an empty MCP credential", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-browser-revoke");
       revokedThreads.length = 0;
 
       yield* startSessionWith(false, threadId);
 
-      // Clearing the in-memory map is not enough: a token issued before the
-      // toggle flipped stays valid against `/mcp` for its whole liveness
-      // window, and later turns refresh it.
-      assert.deepEqual(revokedThreads, [threadId]);
+      assert.deepEqual(revokedThreads, []);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -4932,9 +4991,9 @@ describe("agent browser access", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-browser-on");
 
-      const issued = yield* startSessionWith(true, threadId);
+      const { issued } = yield* startSessionWith(true, threadId);
 
-      assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -4942,17 +5001,224 @@ describe("agent browser access", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-off");
       revokedThreads.length = 0;
-      const issued = yield* startSessionWith(true, threadId, false);
-      assert.deepEqual(issued, []);
-      assert.deepEqual(revokedThreads, [threadId]);
+      const { issued } = yield* startSessionWith(true, threadId, false);
+      assert.deepEqual(issued[0]?.capabilities, []);
+      assert.deepEqual(revokedThreads, []);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("requests an MCP credential when the project overrides browser access to on", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-on");
-      const issued = yield* startSessionWith(false, threadId, true);
-      assert.deepEqual(issued, [threadId]);
+      const { issued } = yield* startSessionWith(false, threadId, true);
+      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("grants title updates without granting browser access", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-title-on");
+      const { issued, codex, isTitleRenameAvailable } = yield* startSessionWith(
+        false,
+        threadId,
+        undefined,
+        true,
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, ["thread-title"]);
+      assert.deepEqual(isTitleRenameAvailable.mock.calls, [
+        [
+          threadId,
+          {
+            minAgeMinutes: 120,
+            minCompletedTurns: 5,
+            cooldownMinutes: 45,
+            minFreshTurns: 2,
+            rollingLimit: null,
+          },
+        ],
+      ]);
+      const startInput = codex.startSession.mock.calls[0]?.[0] as
+        | ProviderAdapterSessionStartInput
+        | undefined;
+      assert.deepEqual(startInput?.runtimeInstructions, {
+        browserToolsAvailable: false,
+        currentThreadTitle: "Browser access test",
+      });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds exhausted title quota while preserving browser access", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-title-quota-exhausted");
+      const { issued, codex } = yield* startSessionWith(
+        true,
+        threadId,
+        undefined,
+        true,
+        "generated",
+        false,
+        {},
+        true,
+        false,
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      const startInput = codex.startSession.mock.calls[0]?.[0] as
+        | ProviderAdapterSessionStartInput
+        | undefined;
+      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds title guidance during initial title seeding", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-title-initial-seeding");
+      const { issued, codex, isTitleRenameAvailable } = yield* startSessionWith(
+        false,
+        threadId,
+        undefined,
+        true,
+        "generated",
+        false,
+        {},
+        true,
+        true,
+        "New thread",
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, []);
+      assert.equal(isTitleRenameAvailable.mock.calls.length, 0);
+      const startInput = codex.startSession.mock.calls[0]?.[0] as
+        | ProviderAdapterSessionStartInput
+        | undefined;
+      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: false });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps browser access when the title quota cannot be read", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-title-quota-error");
+      const { issued, codex } = yield* startSessionWith(
+        true,
+        threadId,
+        undefined,
+        true,
+        "generated",
+        false,
+        {},
+        true,
+        "error",
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      const startInput = codex.startSession.mock.calls[0]?.[0] as
+        | ProviderAdapterSessionStartInput
+        | undefined;
+      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds title updates for inactive lifecycles while preserving browser access", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-01-01T00:00:00.000Z"));
+      for (const [name, lifecycle, threadAvailable] of [
+        ["archived", { archivedAt: "2025-12-31T23:00:00.000Z" }, true],
+        ["settled", { settledOverride: "settled" as const }, true],
+        ["snoozed", { snoozedUntil: "2026-01-01T00:00:01.000Z" }, true],
+        [
+          "regenerating",
+          {
+            titleRegeneration: {
+              requestId: CommandId.make("provider-service-pending-regeneration"),
+              startedAt: "2026-01-01T00:00:00.000Z",
+            },
+          },
+          true,
+        ],
+        ["deleted", {}, false],
+      ] as const) {
+        const threadId = asThreadId(`thread-title-${name}`);
+        const { issued, codex } = yield* startSessionWith(
+          true,
+          threadId,
+          undefined,
+          true,
+          "generated",
+          false,
+          lifecycle,
+          threadAvailable,
+        );
+
+        assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+        const startInput = codex.startSession.mock.calls[0]?.[0] as
+          | ProviderAdapterSessionStartInput
+          | undefined;
+        assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+      }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("restores title updates after a snooze expires", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-01-01T00:00:00.000Z"));
+      const threadId = asThreadId("thread-title-snooze-expired");
+      const { issued } = yield* startSessionWith(
+        true,
+        threadId,
+        undefined,
+        true,
+        "generated",
+        false,
+        { snoozedUntil: "2025-12-31T23:59:59.000Z" },
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, ["thread-title", "preview"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds title guidance for manual and missing title state", () =>
+    Effect.gen(function* () {
+      for (const titleStateSource of ["manual", null] as const) {
+        const threadId = asThreadId(`thread-title-protected-${titleStateSource ?? "missing"}`);
+        const { issued, codex, isTitleRenameAvailable } = yield* startSessionWith(
+          false,
+          threadId,
+          undefined,
+          true,
+          titleStateSource,
+        );
+
+        assert.deepEqual(issued[0]?.capabilities, []);
+        assert.equal(isTitleRenameAvailable.mock.calls.length, 0);
+        const startInput = codex.startSession.mock.calls[0]?.[0] as
+          | ProviderAdapterSessionStartInput
+          | undefined;
+        assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: false });
+      }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("refreshes title guidance for each turn", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-title-turn");
+      const { codex, isTitleRenameAvailable } = yield* startSessionWith(
+        false,
+        threadId,
+        undefined,
+        true,
+        "generated",
+        true,
+      );
+
+      const turnInput = codex.sendTurn.mock.calls[0]?.[0] as
+        | ProviderAdapterSendTurnInput
+        | undefined;
+      assert.deepEqual(turnInput?.runtimeInstructions, {
+        browserToolsAvailable: false,
+        currentThreadTitle: "Browser access test",
+      });
+      assert.equal(isTitleRenameAvailable.mock.calls.length, 2);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

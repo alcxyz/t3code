@@ -40,6 +40,7 @@ import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
+import { buildThreadTitleInstructions } from "../RuntimeInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -178,6 +179,8 @@ export interface CodexSessionRuntimeSendTurnInput {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined;
   readonly interactionMode?: ProviderInteractionMode;
+  readonly currentThreadTitle?: string;
+  readonly browserToolsAvailable?: boolean;
 }
 
 export interface CodexThreadTurnSnapshot {
@@ -583,7 +586,10 @@ function buildCodexCollaborationMode(input: {
       reasoning_effort: reasoningEffort,
       developer_instructions: buildCodexDeveloperInstructions(
         input.interactionMode,
-        { model, reasoningEffort },
+        {
+          model,
+          reasoningEffort,
+        },
         input.browserToolsAvailable ?? true,
       ),
     },
@@ -604,11 +610,19 @@ export function buildTurnStartParams(input: {
   readonly interactionMode?: ProviderInteractionMode;
   /** Defaults to true so callers that predate the agent-access gate are unchanged. */
   readonly browserToolsAvailable?: boolean;
+  readonly currentThreadTitle?: string;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
 > {
   const turnInput: Array<EffectCodexSchema.V2TurnStartParams__UserInput> = [];
+  // Send turn-specific title guidance as input, as the Claude adapter does.
+  // Collaboration-mode settings can be recorded without their custom
+  // developer instructions reaching the model.
+  const titleInstructions = buildThreadTitleInstructions(input.currentThreadTitle);
+  if (titleInstructions) {
+    turnInput.push({ type: "text", text: titleInstructions });
+  }
   if (input.prompt) {
     turnInput.push({
       type: "text",
@@ -2352,7 +2366,9 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            browserToolsAvailable:
+              input.browserToolsAvailable ?? hasConfiguredMcpServer(options.appServerArgs),
+            ...(input.currentThreadTitle ? { currentThreadTitle: input.currentThreadTitle } : {}),
           });
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

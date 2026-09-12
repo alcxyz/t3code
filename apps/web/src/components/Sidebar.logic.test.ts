@@ -29,6 +29,7 @@ import {
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
   formatWorkingDurationLabel,
+  hasActiveAutomaticRename,
   shouldClearThreadSelectionOnMouseDown,
   shouldRecedeSidebarThread,
   sortLogicalProjectsForSidebar,
@@ -1919,6 +1920,7 @@ describe("resolveThreadStatusPill", () => {
     hasPendingUserInput: false,
     interactionMode: "plan" as const,
     latestTurn: null,
+    latestUserMessageAt: "2026-03-09T09:00:00.000Z",
     lastVisitedAt: undefined,
     session: {
       threadId: ThreadId.make("thread-1"),
@@ -1996,6 +1998,29 @@ describe("resolveThreadStatusPill", () => {
     ).toBeNull();
   });
 
+  it("shows an automatic rename until a newer user message starts", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          titleAutoRenamedAt: "2026-03-09T09:01:00.000Z",
+          session: null,
+        },
+      }),
+    ).toMatchObject({ label: "Renamed", pulse: false });
+
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          latestUserMessageAt: "2026-03-09T09:02:00.000Z",
+          titleAutoRenamedAt: "2026-03-09T09:01:00.000Z",
+          session: null,
+        },
+      }),
+    ).toBeNull();
+  });
+
   it("shows completed when there is an unseen completion and no active blocker", () => {
     expect(
       resolveThreadStatusPill({
@@ -2012,6 +2037,29 @@ describe("resolveThreadStatusPill", () => {
         },
       }),
     ).toMatchObject({ label: "Completed", pulse: false });
+  });
+});
+
+describe("hasActiveAutomaticRename", () => {
+  it("requires a valid rename timestamp newer than the latest user message", () => {
+    expect(
+      hasActiveAutomaticRename({
+        titleAutoRenamedAt: "2026-03-09T09:01:00.000Z",
+        latestUserMessageAt: "2026-03-09T09:00:00.000Z",
+      }),
+    ).toBe(true);
+    expect(
+      hasActiveAutomaticRename({
+        titleAutoRenamedAt: "2026-03-09T09:01:00.000Z",
+        latestUserMessageAt: "2026-03-09T09:01:00.000Z",
+      }),
+    ).toBe(false);
+    expect(
+      hasActiveAutomaticRename({
+        titleAutoRenamedAt: null,
+        latestUserMessageAt: "2026-03-09T09:00:00.000Z",
+      }),
+    ).toBe(false);
   });
 });
 

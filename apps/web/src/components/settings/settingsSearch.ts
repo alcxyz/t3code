@@ -33,6 +33,7 @@ export interface SettingsSearchItem {
   readonly localBackendManagementOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
+  readonly requiresAutomaticThreadTitles?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -42,6 +43,7 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
+  readonly hasAutomaticThreadTitles: boolean;
 }
 
 /**
@@ -161,6 +163,65 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Project grouping",
     to: "/settings/general",
     searchTerms: ["combine matching repositories environments sidebar"],
+  },
+  {
+    id: "automatic-thread-titles",
+    title: "Keep thread titles up to date",
+    to: "/settings/general",
+    searchTerms: ["agent automatic regenerate rename objective projects threads"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-frequency",
+    title: "Automatic title update policy",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: [
+      "rename rate rare balanced often custom first recurring cooldown fresh turns eligibility projects threads",
+    ],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-minimum-age",
+    title: "Minimum age for automatic title updates",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename eligibility minutes old thread custom threshold"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-minimum-turns",
+    title: "Minimum completed turns for automatic title updates",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: [
+      "rename eligibility agent response work cycle tool calls progress custom threshold",
+    ],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-cooldown",
+    title: "Cooldown between automatic title updates",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename recurring after last feature title minutes custom threshold"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-fresh-turns",
+    title: "Fresh turns between automatic title updates",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename recurring completed turns after title custom threshold"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-rolling-limit",
+    title: "Rolling automatic title update limit",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename cap maximum count window hours custom optional"],
+    requiresAutomaticThreadTitles: true,
   },
   {
     id: "auto-settle-inactive-threads",
@@ -597,7 +658,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.requiresAutomaticThreadTitles || availability.hasAutomaticThreadTitles),
   );
 }
 

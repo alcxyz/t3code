@@ -47,6 +47,8 @@ export function mergeEnvironmentThread(
     id: shell.id,
     projectId: shell.projectId,
     title: shell.title,
+    titleState: shell.titleState,
+    titleAutoRenamedAt: shell.titleAutoRenamedAt,
     modelSelection: shell.modelSelection,
     runtimeMode: shell.runtimeMode,
     interactionMode: shell.interactionMode,
