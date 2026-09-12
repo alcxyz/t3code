@@ -366,6 +366,18 @@ const probeClaudeCapabilities = (
         const usageResult = yield* Effect.tryPromise(() =>
           q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
         ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result);
+        if (Result.isFailure(usageResult)) {
+          yield* Effect.logWarning("Claude usage quota probe failed.", {
+            reason: usageResult.failure._tag === "TimeoutError" ? "timeout" : "request_failed",
+          });
+        } else if (usageResult.success.rate_limits_available && !usageResult.success.rate_limits) {
+          yield* Effect.logWarning(
+            "Claude usage quota probe returned no limits for a supported account.",
+            {
+              reason: "empty_response",
+            },
+          );
+        }
         const usage = Result.isSuccess(usageResult)
           ? {
               rate_limits_available: usageResult.success.rate_limits_available,

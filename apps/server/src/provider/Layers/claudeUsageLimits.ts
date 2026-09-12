@@ -159,9 +159,17 @@ export function claudeUsageResponseToLimits(input: {
   readonly checkedAt: string;
 }): { readonly limits: ServerProviderUsageLimits; readonly names: ClaudeScopedLimitNames } {
   const { response, checkedAt } = input;
-  if (!response.rate_limits_available || !response.rate_limits) {
+  if (!response.rate_limits_available) {
     return {
       limits: makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }),
+      names: { overageIncluded: undefined },
+    };
+  }
+  // The CLI also returns null after a failed fetch, including HTTP 429.
+  // Support and successful retrieval are separate signals.
+  if (!response.rate_limits) {
+    return {
+      limits: makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" }),
       names: { overageIncluded: undefined },
     };
   }
@@ -195,5 +203,7 @@ export const recordClaudeUsageResponse = (
   input: Parameters<typeof claudeUsageResponseToLimits>[0],
 ): Effect.Effect<ServerProviderUsageLimits> => {
   const { limits, names } = claudeUsageResponseToLimits(input);
-  return Ref.set(namesRef, names).pipe(Effect.as(limits));
+  return limits.unavailable?.reason === "probeFailed"
+    ? Effect.succeed(limits)
+    : Ref.set(namesRef, names).pipe(Effect.as(limits));
 };
