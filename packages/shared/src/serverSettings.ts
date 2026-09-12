@@ -24,6 +24,29 @@ import {
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownOption(ServerSettingsJson);
 
+export function resolveAutomaticThreadTitleRenameLimit(
+  settings: Pick<
+    ServerSettings,
+    | "automaticThreadTitleRenamePolicy"
+    | "automaticThreadTitleRenameMaxCount"
+    | "automaticThreadTitleRenameWindowHours"
+  >,
+): { maxCount: number; windowHours: number } {
+  switch (settings.automaticThreadTitleRenamePolicy) {
+    case "rare":
+      return { maxCount: 1, windowHours: 24 };
+    case "balanced":
+      return { maxCount: 1, windowHours: 12 };
+    case "often":
+      return { maxCount: 1, windowHours: 6 };
+    case "custom":
+      return {
+        maxCount: settings.automaticThreadTitleRenameMaxCount,
+        windowHours: settings.automaticThreadTitleRenameWindowHours,
+      };
+  }
+}
+
 export function resolveProjectAgentBrowserAccess(
   settings: Pick<ServerSettings, "enableAgentBrowserAccess" | "projectAgentBrowserAccessOverrides">,
   projectId: ProjectId,

@@ -32,6 +32,7 @@ describe("buildRuntimeInstructions", () => {
     expect(enabled).toContain("natural stopping points");
     expect(enabled).toContain("main objective has materially changed");
     expect(enabled).toContain("do not make a separate generation call");
+    expect(enabled).toContain("rate limited");
     expect(disabled).not.toContain("thread_title_updates");
     expect(disabled).not.toContain("rename_current_thread");
   });

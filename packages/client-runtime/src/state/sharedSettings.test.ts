@@ -90,6 +90,9 @@ describe("splitSharedServerPatch", () => {
   it("routes preference keys to the shared patch and machine keys to the local patch", () => {
     const { sharedPatch, localPatch } = splitSharedServerPatch({
       automaticThreadTitles: true,
+      automaticThreadTitleRenamePolicy: "often",
+      automaticThreadTitleRenameMaxCount: 5,
+      automaticThreadTitleRenameWindowHours: 48,
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
@@ -99,6 +102,9 @@ describe("splitSharedServerPatch", () => {
     });
     expect(sharedPatch).toEqual({
       automaticThreadTitles: true,
+      automaticThreadTitleRenamePolicy: "often",
+      automaticThreadTitleRenameMaxCount: 5,
+      automaticThreadTitleRenameWindowHours: 48,
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
@@ -116,6 +122,9 @@ describe("pickSharedServerSettings", () => {
     expect(
       Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
     ).toEqual([
+      "automaticThreadTitleRenameMaxCount",
+      "automaticThreadTitleRenamePolicy",
+      "automaticThreadTitleRenameWindowHours",
       "automaticThreadTitles",
       "continueThreadsAfterServerUpdate",
       "newWorktreesStartFromOrigin",
@@ -131,7 +140,13 @@ describe("filterSharedServerPatch", () => {
   it.each([true, false])(
     "syncs automatic title preference %s only to servers with support",
     (automaticThreadTitles) => {
-      const patch = { automaticThreadTitles, sidebarAutoSettleOnMerge: false };
+      const patch = {
+        automaticThreadTitles,
+        automaticThreadTitleRenamePolicy: "custom" as const,
+        automaticThreadTitleRenameMaxCount: 5,
+        automaticThreadTitleRenameWindowHours: 48,
+        sidebarAutoSettleOnMerge: false,
+      };
 
       expect(filterSharedServerPatch(patch, { threadRestartContinuation: true })).toEqual({
         sidebarAutoSettleOnMerge: false,
@@ -142,11 +157,21 @@ describe("filterSharedServerPatch", () => {
           threadRestartContinuation: true,
         }),
       ).not.toHaveProperty("automaticThreadTitles");
+      expect(
+        pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, {
+          threadRestartContinuation: true,
+        }),
+      ).not.toHaveProperty("automaticThreadTitleRenamePolicy");
     },
   );
 
   it("ignores automatic title drift on older servers", () => {
-    const primarySettings = { ...DEFAULT_SERVER_SETTINGS, automaticThreadTitles: true };
+    const primarySettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      automaticThreadTitleRenamePolicy: "custom" as const,
+      automaticThreadTitleRenameMaxCount: 4,
+      automaticThreadTitleRenameWindowHours: 36,
+    };
     const olderServer = {
       environmentId: laptopId,
       label: "Older laptop",

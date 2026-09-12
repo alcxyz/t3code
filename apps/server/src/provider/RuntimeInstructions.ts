@@ -17,7 +17,7 @@ export function buildRuntimeInstructions(runtime: {
 
 export function buildThreadTitleInstructions(currentThreadTitle?: string): string {
   return currentThreadTitle
-    ? `<thread_title_updates>Automatic thread-title updates are enabled. The current title is ${toSafeJsonStringLiteral(currentThreadTitle)}. At natural stopping points, consider whether it still describes the main objective. Call the t3-code \`rename_current_thread\` tool only when the main objective has materially changed or a vague task has become concrete and this title is misleading. Choose a concise, stable title for the main objective. Do not rename for routine progress, debugging, or minor subtopics. Decide from the conversation itself; do not make a separate generation call. If the tool reports disabled, protected, or unavailable, do not retry during this turn.</thread_title_updates>`
+    ? `<thread_title_updates>Automatic thread-title updates are enabled. The current title is ${toSafeJsonStringLiteral(currentThreadTitle)}. At natural stopping points, consider whether it still describes the main objective. Call the t3-code \`rename_current_thread\` tool only when the main objective has materially changed or a vague task has become concrete and this title is misleading. Choose a concise, stable title for the main objective. Do not rename for routine progress, debugging, or minor subtopics. Decide from the conversation itself; do not make a separate generation call. If the tool reports disabled, protected, unavailable, or rate limited, do not retry during this turn.</thread_title_updates>`
     : "";
 }
 

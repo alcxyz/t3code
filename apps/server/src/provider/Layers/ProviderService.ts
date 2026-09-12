@@ -79,6 +79,11 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import {
+  AutomaticThreadTitleRateLimit,
+  hasAutomaticThreadTitleRenameQuota,
+} from "../../orchestration/AutomaticThreadTitleRateLimit.ts";
+import { allowsAutomaticThreadTitleUpdate } from "../../orchestration/ThreadTitlePolicy.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -477,6 +482,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const projectionQuery = yield* Effect.serviceOption(
     ProjectionSnapshotQuery.ProjectionSnapshotQuery,
   );
+  const automaticThreadTitleRateLimit = yield* Effect.serviceOption(AutomaticThreadTitleRateLimit);
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const revokeMcpCredential =
@@ -862,7 +868,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     function* (threadId: ThreadId) {
       const settings = yield* serverSettings.getSettings;
       const capabilities: Array<"preview" | "thread-title"> = [];
-      if (settings.automaticThreadTitles) capabilities.push("thread-title");
 
       const needsThread =
         settings.automaticThreadTitles ||
@@ -871,6 +876,28 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         needsThread && Option.isSome(projectionQuery)
           ? yield* projectionQuery.value.getThreadShellById(threadId)
           : Option.none();
+
+      const automaticTitleLifecycleAllowsUpdates =
+        settings.automaticThreadTitles &&
+        Option.isSome(thread) &&
+        thread.value.titleSource === "automatic" &&
+        allowsAutomaticThreadTitleUpdate(thread.value, yield* nowIso) &&
+        Option.isSome(automaticThreadTitleRateLimit);
+      const automaticTitleUpdatesAllowed = automaticTitleLifecycleAllowsUpdates
+        ? yield* hasAutomaticThreadTitleRenameQuota(threadId, settings).pipe(
+            Effect.provideService(
+              AutomaticThreadTitleRateLimit,
+              automaticThreadTitleRateLimit.value,
+            ),
+            Effect.catch((cause) =>
+              Effect.logWarning(
+                "Could not resolve automatic thread title quota; withholding title updates for this turn.",
+                { cause },
+              ).pipe(Effect.as(false)),
+            ),
+          )
+        : false;
+      if (automaticTitleUpdatesAllowed) capabilities.push("thread-title");
 
       if (Object.keys(settings.projectAgentBrowserAccessOverrides).length === 0) {
         if (settings.enableAgentBrowserAccess) capabilities.push("preview");
@@ -882,10 +909,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
 
       // A title-only credential does not grant preview access. Guidance is
-      // also withheld for user-authored and legacy titles, which the rename
-      // tool protects independently in case ownership changes during a turn.
+      // also withheld for user-authored titles, which the rename tool protects
+      // independently in case ownership changes during a turn.
       const currentThreadTitle =
-        settings.automaticThreadTitles &&
+        automaticTitleUpdatesAllowed &&
         Option.isSome(thread) &&
         thread.value.titleSource === "automatic"
           ? thread.value.title

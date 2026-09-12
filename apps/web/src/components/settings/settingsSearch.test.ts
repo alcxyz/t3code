@@ -166,6 +166,7 @@ describe("searchSettings", () => {
       "auto-settle-merged-threads",
       "days-before-auto-settle",
       "automatic-thread-titles",
+      "automatic-thread-title-frequency",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
   });
@@ -200,6 +201,7 @@ describe("searchSettings", () => {
     });
 
     expect(available.map((item) => item.id)).toContain("automatic-thread-titles");
+    expect(available.map((item) => item.id)).toContain("automatic-thread-title-frequency");
   });
 
   it("keeps catalog result ids unique", () => {

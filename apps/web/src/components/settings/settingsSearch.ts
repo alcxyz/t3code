@@ -172,6 +172,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresAutomaticThreadTitles: true,
   },
   {
+    id: "automatic-thread-title-frequency",
+    title: "Automatic title update frequency",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: ["rename rate limit rare balanced often custom rolling window projects threads"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/general",

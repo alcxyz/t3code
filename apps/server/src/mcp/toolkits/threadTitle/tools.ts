@@ -5,6 +5,7 @@ import { Tool, Toolkit } from "effect/unstable/ai";
 
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { AutomaticThreadTitleRateLimit } from "../../../orchestration/AutomaticThreadTitleRateLimit.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { McpInvocationContext } from "../../McpInvocationContext.ts";
 
@@ -18,14 +19,21 @@ export const RenameCurrentThreadInput = Schema.Struct({
 });
 
 export const RenameCurrentThreadResult = Schema.Struct({
-  status: Schema.Literals(["updated", "unchanged", "disabled", "protected", "unavailable"]),
+  status: Schema.Literals([
+    "updated",
+    "unchanged",
+    "disabled",
+    "protected",
+    "unavailable",
+    "rate_limited",
+  ]),
   title: Schema.optional(Schema.String),
 });
 
 export const ThreadTitleToolkit = Toolkit.make(
   Tool.make("rename_current_thread", {
     description:
-      "Rename only the current thread using the title you supply. Use only when T3's automatic-title instructions are enabled and the existing title no longer describes the main objective. Manually chosen titles are protected. If disabled, protected, or unavailable, do not retry during this turn.",
+      "Rename only the current thread using the title you supply. Use only when T3's automatic-title instructions are enabled and the existing title no longer describes the main objective. Manually chosen titles are protected. If disabled, protected, unavailable, or rate limited, do not retry during this turn.",
     parameters: RenameCurrentThreadInput,
     success: RenameCurrentThreadResult,
     failure: Schema.String,
@@ -33,6 +41,7 @@ export const ThreadTitleToolkit = Toolkit.make(
       McpInvocationContext,
       ServerSettingsService,
       ProjectionSnapshotQuery,
+      AutomaticThreadTitleRateLimit,
       OrchestrationEngineService,
       Crypto.Crypto,
     ],

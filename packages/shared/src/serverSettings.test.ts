@@ -13,6 +13,7 @@ import { createModelSelection } from "./model.ts";
 import { resolveProjectScripts, projectScriptsInheritDefaults } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
+  resolveAutomaticThreadTitleRenameLimit,
   isModelSelectionProviderEnabled,
   parsePersistedServerObservabilitySettings,
   resolveSourceControlWriterModelSelection,
@@ -716,5 +717,23 @@ describe("serverSettings helpers", () => {
     });
 
     expect(resolved.pauseWhenOnBattery).toBe(false);
+  });
+});
+
+describe("automatic thread title rename limits", () => {
+  it.each([
+    ["rare", 1, 24],
+    ["balanced", 1, 12],
+    ["often", 1, 6],
+    ["custom", 2, 48],
+  ] as const)("resolves %s while retaining custom settings", (policy, maxCount, windowHours) => {
+    const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      automaticThreadTitleRenamePolicy: policy,
+      automaticThreadTitleRenameMaxCount: 2,
+      automaticThreadTitleRenameWindowHours: 48,
+    });
+    expect(resolveAutomaticThreadTitleRenameLimit(settings)).toEqual({ maxCount, windowHours });
+    expect(settings.automaticThreadTitleRenameMaxCount).toBe(2);
+    expect(settings.automaticThreadTitleRenameWindowHours).toBe(48);
   });
 });

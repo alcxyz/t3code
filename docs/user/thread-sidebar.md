@@ -72,13 +72,20 @@ their default order until the server is updated.
 
 ## Keep thread titles up to date
 
-Turn on **Keep thread titles up to date** in **Settings → General** to let agents update a thread's
-title when its objective meaningfully changes. Title updates happen as part of agent work; T3 Code
-does not generate them on a schedule.
+Turn on **Keep thread titles up to date** in **Settings → General → Projects & threads** to let
+agents update a thread's title when its objective meaningfully changes. Title updates happen as
+part of agent work; T3 Code does not generate them on a schedule. Snoozed, archived, and settled
+threads are skipped.
 
-The setting preserves titles you renamed yourself. It also treats titles created before this
-setting was available as protected. Choose **Regenerate title** from a thread's menu when you want
-the agent to replace a protected title and keep that title up to date afterward.
+Choose **Rare** for at most one rename every 24 hours, **Balanced** (the default) for one every
+12 hours, or **Often** for one every 6 hours. **Custom** lets you set a maximum count and a window
+in hours. These are rolling limits for each thread, shared across devices and preserved across server restarts.
+Reaching a limit pauses automatic renaming until an earlier rename leaves the window; it does
+not queue a rename for later.
+
+Titles you renamed yourself stay protected. Choose **Regenerate title** from a thread's menu when
+you want the agent to replace a protected title and keep it up to date afterward. Manual renames,
+explicit regeneration, and the initial title do not count toward the automatic rename limit.
 
 If an older server writes the environment's settings, turn this option on again after returning to
 a server version that supports it. Older servers discard settings they do not recognize.

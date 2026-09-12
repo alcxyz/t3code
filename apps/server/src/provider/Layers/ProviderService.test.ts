@@ -72,6 +72,7 @@ import { makeProviderServiceLive } from "./ProviderService.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import {
   makeSqlitePersistenceLive,
@@ -82,6 +83,7 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { AutomaticThreadTitleRateLimit } from "../../orchestration/AutomaticThreadTitleRateLimit.ts";
 import type * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
@@ -4813,6 +4815,11 @@ describe("provider MCP capabilities", () => {
     automaticThreadTitles = false,
     titleSource: "automatic" | "user" | undefined = "automatic",
     sendTurn = false,
+    lifecycle: Partial<
+      Pick<typeof OrchestrationThreadShell.Type, "archivedAt" | "settledOverride" | "snoozedUntil">
+    > = {},
+    threadAvailable = true,
+    titleRenameQuotaAvailable: boolean | "error" = true,
   ) =>
     Effect.gen(function* () {
       const issued: Array<McpSessionRegistry.McpCredentialRequest> = [];
@@ -4826,6 +4833,11 @@ describe("provider MCP capabilities", () => {
       );
       const directoryLayer = ProviderSessionDirectoryLive.pipe(
         Layer.provide(runtimeRepositoryLayer),
+      );
+      const isTitleRenameAvailable = vi.fn(() =>
+        titleRenameQuotaAvailable === "error"
+          ? Effect.fail(new PersistenceSqlError({ operation: "test-title-quota" }))
+          : Effect.succeed(titleRenameQuotaAvailable),
       );
       const projectionLayer = Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getTurnStartMessage: () => Effect.die("unused"),
@@ -4847,6 +4859,7 @@ describe("provider MCP capabilities", () => {
         getThreadShellById: (requestedThreadId) =>
           Effect.gen(function* () {
             assert.equal(requestedThreadId, threadId);
+            if (!threadAvailable) return Option.none();
             return Option.some(
               yield* decodeBrowserAccessThreadShell({
                 id: threadId,
@@ -4860,6 +4873,7 @@ describe("provider MCP capabilities", () => {
                 latestTurn: null,
                 createdAt: "2026-01-01T00:00:00.000Z",
                 updatedAt: "2026-01-01T00:00:00.000Z",
+                ...lifecycle,
                 session: null,
                 latestUserMessageAt: null,
                 hasPendingApprovals: false,
@@ -4895,6 +4909,15 @@ describe("provider MCP capabilities", () => {
         Layer.provide(directoryLayer),
         Layer.provide(projectionLayer),
         Layer.provide(
+          Layer.succeed(
+            AutomaticThreadTitleRateLimit,
+            AutomaticThreadTitleRateLimit.of({
+              isAvailable: isTitleRenameAvailable,
+              withPermit: (_threadId, _limit, effect) => Effect.map(effect, Option.some),
+            }),
+          ),
+        ),
+        Layer.provide(
           ServerSettings.ServerSettingsService.layerTest({
             enableAgentBrowserAccess,
             automaticThreadTitles,
@@ -4927,7 +4950,7 @@ describe("provider MCP capabilities", () => {
       }).pipe(Effect.provide(providerLayer));
 
       McpProviderSession.clearMcpProviderSession(threadId);
-      return { issued, codex };
+      return { issued, codex, isTitleRenameAvailable };
     });
 
   it.effect("attaches an MCP credential with no capabilities when optional tools are off", () =>
@@ -4983,9 +5006,17 @@ describe("provider MCP capabilities", () => {
   it.effect("grants title updates without granting browser access", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-title-on");
-      const { issued, codex } = yield* startSessionWith(false, threadId, undefined, true);
+      const { issued, codex, isTitleRenameAvailable } = yield* startSessionWith(
+        false,
+        threadId,
+        undefined,
+        true,
+      );
 
       assert.deepEqual(issued[0]?.capabilities, ["thread-title"]);
+      assert.deepEqual(isTitleRenameAvailable.mock.calls, [
+        [threadId, { maxCount: 1, windowHours: 12 }],
+      ]);
       const startInput = codex.startSession.mock.calls[0]?.[0] as
         | ProviderAdapterSessionStartInput
         | undefined;
@@ -4996,12 +5027,113 @@ describe("provider MCP capabilities", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("withholds exhausted title quota while preserving browser access", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-title-quota-exhausted");
+      const { issued, codex } = yield* startSessionWith(
+        true,
+        threadId,
+        undefined,
+        true,
+        "automatic",
+        false,
+        {},
+        true,
+        false,
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      const startInput = codex.startSession.mock.calls[0]?.[0] as
+        | ProviderAdapterSessionStartInput
+        | undefined;
+      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps browser access when the title quota cannot be read", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-title-quota-error");
+      const { issued, codex } = yield* startSessionWith(
+        true,
+        threadId,
+        undefined,
+        true,
+        "automatic",
+        false,
+        {},
+        true,
+        "error",
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      const startInput = codex.startSession.mock.calls[0]?.[0] as
+        | ProviderAdapterSessionStartInput
+        | undefined;
+      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds title updates for inactive lifecycles while preserving browser access", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-01-01T00:00:00.000Z"));
+      for (const [name, lifecycle, threadAvailable] of [
+        ["archived", { archivedAt: "2025-12-31T23:00:00.000Z" }, true],
+        ["settled", { settledOverride: "settled" as const }, true],
+        ["snoozed", { snoozedUntil: "2026-01-01T00:00:01.000Z" }, true],
+        ["deleted", {}, false],
+      ] as const) {
+        const threadId = asThreadId(`thread-title-${name}`);
+        const { issued, codex } = yield* startSessionWith(
+          true,
+          threadId,
+          undefined,
+          true,
+          "automatic",
+          false,
+          lifecycle,
+          threadAvailable,
+        );
+
+        assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+        const startInput = codex.startSession.mock.calls[0]?.[0] as
+          | ProviderAdapterSessionStartInput
+          | undefined;
+        assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+      }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("restores title updates after a snooze expires", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-01-01T00:00:00.000Z"));
+      const threadId = asThreadId("thread-title-snooze-expired");
+      const { issued } = yield* startSessionWith(
+        true,
+        threadId,
+        undefined,
+        true,
+        "automatic",
+        false,
+        { snoozedUntil: "2025-12-31T23:59:59.000Z" },
+      );
+
+      assert.deepEqual(issued[0]?.capabilities, ["thread-title", "preview"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("withholds title guidance for a user-authored title", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-title-protected");
-      const { issued, codex } = yield* startSessionWith(false, threadId, undefined, true, "user");
+      const { issued, codex, isTitleRenameAvailable } = yield* startSessionWith(
+        false,
+        threadId,
+        undefined,
+        true,
+        "user",
+      );
 
-      assert.deepEqual(issued[0]?.capabilities, ["thread-title"]);
+      assert.deepEqual(issued[0]?.capabilities, []);
+      assert.equal(isTitleRenameAvailable.mock.calls.length, 0);
       const startInput = codex.startSession.mock.calls[0]?.[0] as
         | ProviderAdapterSessionStartInput
         | undefined;
@@ -5012,7 +5144,7 @@ describe("provider MCP capabilities", () => {
   it.effect("refreshes title guidance for each turn", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-title-turn");
-      const { codex } = yield* startSessionWith(
+      const { codex, isTitleRenameAvailable } = yield* startSessionWith(
         false,
         threadId,
         undefined,
@@ -5028,6 +5160,7 @@ describe("provider MCP capabilities", () => {
         browserToolsAvailable: false,
         currentThreadTitle: "Browser access test",
       });
+      assert.equal(isTitleRenameAvailable.mock.calls.length, 2);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

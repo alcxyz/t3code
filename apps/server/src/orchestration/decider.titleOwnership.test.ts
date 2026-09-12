@@ -10,6 +10,7 @@ import {
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as TestClock from "effect/testing/TestClock";
 
 import { decideOrchestrationCommand } from "./decider.ts";
 import { projectEvent } from "./projector.ts";
@@ -72,11 +73,15 @@ it.layer(NodeServices.layer)("thread title ownership", (it) => {
     }),
   );
 
-  it.effect("rejects automatic writes after archival or deletion races", () =>
+  it.effect("rejects automatic writes after lifecycle exclusion races", () =>
     Effect.gen(function* () {
-      for (const lifecycle of [{ archivedAt: NOW }, { deletedAt: NOW }] satisfies ReadonlyArray<
-        Partial<OrchestrationThread>
-      >) {
+      yield* TestClock.setTime(Date.parse(NOW));
+      for (const lifecycle of [
+        { archivedAt: NOW },
+        { deletedAt: NOW },
+        { settledOverride: "settled" },
+        { snoozedUntil: "2026-01-01T00:00:01.000Z" },
+      ] satisfies ReadonlyArray<Partial<OrchestrationThread>>) {
         const error = yield* decideOrchestrationCommand({
           command: {
             type: "thread.meta.update",
@@ -89,6 +94,30 @@ it.layer(NodeServices.layer)("thread title ownership", (it) => {
         }).pipe(Effect.flip);
         expect(error).toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
       }
+    }),
+  );
+
+  it.effect("allows automatic writes after a snooze expires", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      const decided = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.meta.update",
+          commandId: CommandId.make("agent-thread-title:expired-snooze"),
+          threadId: THREAD_ID,
+          title: "Automatic title",
+          titleSource: "automatic",
+        },
+        readModel: makeReadModel({
+          titleSource: "automatic",
+          snoozedUntil: "2025-12-31T23:59:59.000Z",
+        }),
+      });
+      const event = Array.isArray(decided) ? decided[0]! : decided;
+      expect(event).toMatchObject({
+        type: "thread.meta-updated",
+        payload: { title: "Automatic title", titleSource: "automatic" },
+      });
     }),
   );
 
@@ -139,12 +168,16 @@ it.layer(NodeServices.layer)("thread title ownership", (it) => {
     }),
   );
 
-  it.effect("lets explicit regeneration return a title to automatic ownership", () =>
+  it.effect("lets explicit regeneration bypass the automatic-update lifecycle gate", () =>
     Effect.gen(function* () {
       const requestId = CommandId.make("regenerate-title");
       const readModel = makeReadModel({
         titleSource: "user",
         titleRegeneration: { requestId, startedAt: NOW },
+        archivedAt: NOW,
+        deletedAt: NOW,
+        settledOverride: "settled",
+        snoozedUntil: "2026-01-01T00:00:01.000Z",
       });
       const decided = yield* decideOrchestrationCommand({
         command: {

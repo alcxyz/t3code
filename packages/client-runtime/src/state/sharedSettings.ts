@@ -23,6 +23,9 @@ import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 /** Server keys that hold a user preference rather than machine config. */
 const SHARED_SERVER_SETTING_KEYS = [
   "automaticThreadTitles",
+  "automaticThreadTitleRenamePolicy",
+  "automaticThreadTitleRenameMaxCount",
+  "automaticThreadTitleRenameWindowHours",
   "continueThreadsAfterServerUpdate",
   "sidebarAutoSettleAfterDays",
   "sidebarAutoSettleOnMerge",
@@ -86,7 +89,12 @@ export function filterSharedServerPatch(
     patch = Struct.omit(patch, ["textGenerationModelSelection"]);
   }
   if (capabilities?.automaticThreadTitles !== true) {
-    patch = Struct.omit(patch, ["automaticThreadTitles"]);
+    patch = Struct.omit(patch, [
+      "automaticThreadTitles",
+      "automaticThreadTitleRenamePolicy",
+      "automaticThreadTitleRenameMaxCount",
+      "automaticThreadTitleRenameWindowHours",
+    ]);
   }
   if (capabilities?.threadRestartContinuation !== true) {
     patch = Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
@@ -144,7 +152,7 @@ export function findSharedSettingsMismatches(input: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly primarySettings: ServerSettings | null;
   readonly primaryCapabilities?:
-    | Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation">
+    | Pick<ExecutionEnvironmentCapabilities, "automaticThreadTitles" | "threadRestartContinuation">
     | undefined;
   readonly environments: ReadonlyArray<SharedSettingsEnvironment>;
 }): ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }> {

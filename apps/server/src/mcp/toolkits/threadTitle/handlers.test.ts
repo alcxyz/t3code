@@ -15,6 +15,7 @@ import * as Stream from "effect/Stream";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 
 import { OrchestrationCommandInvariantError } from "../../../orchestration/Errors.ts";
+import { AutomaticThreadTitleRateLimit } from "../../../orchestration/AutomaticThreadTitleRateLimit.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
@@ -51,6 +52,7 @@ function makeHarness(
     source?: "automatic" | "user" | "legacy";
     missing?: boolean;
     rejectDispatch?: boolean;
+    rateLimited?: boolean;
   } = {},
 ) {
   let thread = decodeThreadShell({
@@ -122,12 +124,20 @@ function makeHarness(
         return { sequence: commands.length };
       }),
   });
+  const rateLimit = AutomaticThreadTitleRateLimit.of({
+    isAvailable: () => Effect.succeed(options.rateLimited !== true),
+    withPermit: (_threadId, _limit, effect) =>
+      options.rateLimited === true
+        ? Effect.succeed(Option.none())
+        : Effect.map(effect, Option.some),
+  });
   const layer = ThreadTitleToolkitRegistrationLive.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provideMerge(
       ServerSettings.layerTest({ automaticThreadTitles: options.enabled ?? true }),
     ),
     Layer.provide(Layer.succeed(ProjectionSnapshotQuery, queries)),
+    Layer.provide(Layer.succeed(AutomaticThreadTitleRateLimit, rateLimit)),
     Layer.provide(Layer.succeed(OrchestrationEngineService, engine)),
     Layer.provide(NodeServices.layer),
   );
@@ -213,6 +223,16 @@ it.effect("does not report success when the decider rejects a racing rename", ()
     expect((yield* call({ title: "New title" })).structuredContent).toEqual({
       status: "unavailable",
     });
+  }).pipe(Effect.provide(harness.layer));
+});
+
+it.effect("reports an exhausted quota without dispatching", () => {
+  const harness = makeHarness({ rateLimited: true });
+  return Effect.gen(function* () {
+    expect((yield* call({ title: "New title" })).structuredContent).toEqual({
+      status: "rate_limited",
+    });
+    expect(harness.commands).toHaveLength(0);
   }).pipe(Effect.provide(harness.layer));
 });
 

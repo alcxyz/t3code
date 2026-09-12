@@ -922,6 +922,24 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
+const AutomaticThreadTitleRenamePolicy = Schema.Literals(["rare", "balanced", "often", "custom"]);
+export const MIN_AUTOMATIC_TITLE_RENAME_COUNT = 1;
+export const MAX_AUTOMATIC_TITLE_RENAME_COUNT = 100;
+export const MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS = 1;
+export const MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS = 720;
+const AutomaticThreadTitleRenameMaxCount = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AUTOMATIC_TITLE_RENAME_COUNT,
+    maximum: MAX_AUTOMATIC_TITLE_RENAME_COUNT,
+  }),
+);
+const AutomaticThreadTitleRenameWindowHours = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+    maximum: MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
+  }),
+);
+
 export const ServerSettings = Schema.Struct({
   // Legacy token-by-token assistant output. Deliberately a fresh key (was
   // `enableAssistantStreaming`): decoding drops the old key, so everyone,
@@ -935,6 +953,15 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   automaticThreadTitles: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  automaticThreadTitleRenamePolicy: AutomaticThreadTitleRenamePolicy.pipe(
+    Schema.withDecodingDefault(Effect.succeed("balanced" as const)),
+  ),
+  automaticThreadTitleRenameMaxCount: AutomaticThreadTitleRenameMaxCount.pipe(
+    Schema.withDecodingDefault(Effect.succeed(1)),
+  ),
+  automaticThreadTitleRenameWindowHours: AutomaticThreadTitleRenameWindowHours.pipe(
+    Schema.withDecodingDefault(Effect.succeed(12)),
+  ),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
    * withholds the MCP credential, so the `t3-code` server (and with it every
@@ -1223,6 +1250,9 @@ export const ServerSettingsPatch = Schema.Struct({
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   automaticThreadTitles: Schema.optionalKey(Schema.Boolean),
+  automaticThreadTitleRenamePolicy: Schema.optionalKey(AutomaticThreadTitleRenamePolicy),
+  automaticThreadTitleRenameMaxCount: Schema.optionalKey(AutomaticThreadTitleRenameMaxCount),
+  automaticThreadTitleRenameWindowHours: Schema.optionalKey(AutomaticThreadTitleRenameWindowHours),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),

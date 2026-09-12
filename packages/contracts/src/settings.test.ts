@@ -456,6 +456,29 @@ describe("ServerSettings thread settlement", () => {
 });
 
 describe("ServerSettings automatic thread titles", () => {
+  it("defaults frequency to balanced and preserves custom values in patches", () => {
+    expect(decodeServerSettings({}).automaticThreadTitleRenamePolicy).toBe("balanced");
+    const patch = {
+      automaticThreadTitleRenamePolicy: "custom",
+      automaticThreadTitleRenameMaxCount: 2,
+      automaticThreadTitleRenameWindowHours: 48,
+    };
+    expect(decodeServerSettingsPatch(patch)).toEqual(patch);
+  });
+
+  it.each([
+    { automaticThreadTitleRenamePolicy: "unlimited" },
+    { automaticThreadTitleRenameMaxCount: 0 },
+    { automaticThreadTitleRenameMaxCount: 101 },
+    { automaticThreadTitleRenameMaxCount: 1.5 },
+    { automaticThreadTitleRenameWindowHours: 0 },
+    { automaticThreadTitleRenameWindowHours: 721 },
+    { automaticThreadTitleRenameWindowHours: 1.5 },
+  ])("rejects invalid automatic title limits: %j", (patch) => {
+    expect(() => decodeServerSettings(patch)).toThrow();
+    expect(() => decodeServerSettingsPatch(patch)).toThrow();
+  });
+
   it("is opt-in and accepts server-authoritative updates", () => {
     expect(decodeServerSettings({}).automaticThreadTitles).toBe(false);
     expect(decodeServerSettingsPatch({ automaticThreadTitles: true }).automaticThreadTitles).toBe(

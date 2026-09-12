@@ -38,6 +38,7 @@ import {
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
 import { threadHasQueuedTurnStart } from "./ThreadSettlementPolicy.ts";
+import { allowsAutomaticThreadTitleUpdate } from "./ThreadTitlePolicy.ts";
 
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
@@ -878,10 +879,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         threadId: command.threadId,
       });
       const titleSource = command.titleSource ?? "user";
+      const occurredAt = yield* nowIso;
       if (
         command.title !== undefined &&
         titleSource === "automatic" &&
-        (thread.archivedAt !== null || thread.deletedAt !== null)
+        !allowsAutomaticThreadTitleUpdate(thread, occurredAt)
       ) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -907,7 +909,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         thread.branch !== command.expectedBranch
           ? thread.branch
           : command.branch;
-      const occurredAt = yield* nowIso;
       const titleOnlyNoop =
         command.title !== undefined &&
         !titleChanged &&
