@@ -1676,13 +1676,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const mcpContext = yield* resolveMcpTurnContext(input.threadId);
       const hasMcpEndpoint =
         McpProviderSession.readMcpProviderSession(input.threadId) !== undefined;
-      if (mcpContext.mcpEndpointRequired === false) {
-        yield* clearMcpSession(input.threadId);
-      } else if (hasMcpEndpoint) {
+      if (hasMcpEndpoint) {
         // A turn is the clearest sign a session is still alive. The MCP
         // credential is minted once at session start and cannot be rotated into
-        // an already-spawned process, so only refresh a credential whose
-        // endpoint that process received at startup.
+        // an already-spawned process. Keep an existing endpoint dormant with
+        // zero capabilities while every feature is disabled or configuration
+        // cannot be resolved, so a later turn can restore grants in place.
         yield* McpSessionRegistry.updateActiveMcpThreadCapabilities(
           input.threadId,
           mcpContext.capabilities,

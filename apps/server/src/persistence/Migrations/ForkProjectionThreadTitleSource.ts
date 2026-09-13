@@ -33,6 +33,47 @@ export default Effect.gen(function* () {
         FROM fork_projection_thread_title_source_state
         WHERE singleton = 1
       `;
+
+      // An earlier version of this bootstrap inferred manual ownership from an
+      // unannotated creation event. Start from the narrowly matching projection
+      // rows so the indexed event lookups also repair corruption introduced by
+      // an older build after this fork's event watermark was recorded.
+      yield* sql`
+        UPDATE projection_threads AS thread
+        SET title_state_json = NULL
+        WHERE thread.title = 'New thread'
+          AND json_valid(thread.title_state_json)
+          AND json_extract(thread.title_state_json, '$.source') = 'manual'
+          AND json_extract(thread.title_state_json, '$.needsRefinement') = 0
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM orchestration_events AS created
+              WHERE created.command_id = json_extract(thread.title_state_json, '$.version')
+                AND created.aggregate_kind = 'thread'
+                AND created.stream_id = thread.thread_id
+                AND created.event_type = 'thread.created'
+                AND json_valid(created.payload_json)
+                AND json_extract(created.payload_json, '$.title') = 'New thread'
+                AND json_type(created.payload_json, '$.titleState') IS NULL
+                AND json_type(created.payload_json, '$.titleSource') IS NULL
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM orchestration_events AS created
+              WHERE created.command_id IS NULL
+                AND created.event_id = json_extract(thread.title_state_json, '$.version')
+                AND created.aggregate_kind = 'thread'
+                AND created.stream_id = thread.thread_id
+                AND created.event_type = 'thread.created'
+                AND json_valid(created.payload_json)
+                AND json_extract(created.payload_json, '$.title') = 'New thread'
+                AND json_type(created.payload_json, '$.titleState') IS NULL
+                AND json_type(created.payload_json, '$.titleSource') IS NULL
+            )
+          )
+      `;
+
       const maxima = yield* sql<{ readonly lastEventSequence: number }>`
         SELECT COALESCE(MAX(sequence), 0) AS "lastEventSequence"
         FROM orchestration_events
@@ -42,35 +83,6 @@ export default Effect.gen(function* () {
       if (checkpoints.length > 0 && lastEventSequence <= previousSequence) {
         return;
       }
-
-      // An earlier version of this bootstrap inferred manual ownership from an
-      // unannotated creation event. The exact creation-derived state is safe to
-      // clear; a real manual rename has its own command version.
-      yield* sql`
-        WITH default_creations AS (
-          SELECT
-            stream_id AS thread_id,
-            COALESCE(command_id, event_id) AS title_version
-          FROM orchestration_events
-          WHERE sequence > ${previousSequence}
-            AND sequence <= ${lastEventSequence}
-            AND aggregate_kind = 'thread'
-            AND event_type = 'thread.created'
-            AND json_valid(payload_json)
-            AND json_extract(payload_json, '$.title') = 'New thread'
-            AND json_type(payload_json, '$.titleState') IS NULL
-            AND json_type(payload_json, '$.titleSource') IS NULL
-        )
-        UPDATE projection_threads AS thread
-        SET title_state_json = NULL
-        FROM default_creations AS created
-        WHERE created.thread_id = thread.thread_id
-          AND thread.title = 'New thread'
-          AND json_valid(thread.title_state_json)
-          AND json_extract(thread.title_state_json, '$.source') = 'manual'
-          AND json_extract(thread.title_state_json, '$.needsRefinement') = 0
-          AND json_extract(thread.title_state_json, '$.version') = created.title_version
-      `;
 
       yield* sql`
         WITH title_state_events AS (
@@ -98,6 +110,9 @@ export default Effect.gen(function* () {
                   command_id GLOB 'server:thread-title-rename:*'
                   OR command_id GLOB 'server:thread-title-regeneration-complete:*'
                 )
+                THEN 'generated'
+              WHEN actor_kind = 'provider'
+                AND command_id GLOB 'provider:*:thread-meta-update:*'
                 THEN 'generated'
               ELSE 'manual'
             END AS title_source,

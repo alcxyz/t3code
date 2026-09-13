@@ -127,6 +127,28 @@ it.effect("offers undo only while the latest automatic rename still owns the tit
   }),
 );
 
+it.effect("distinguishes initial naming from a protected default title", () =>
+  Effect.gen(function* () {
+    const untitled = { title: "New thread", titleSource: null } as const;
+    expect(yield* readTitleUpdates({ thread: untitled })).toMatchObject({
+      status: "waiting",
+      awaitingInitialTitle: true,
+    });
+    expect(
+      yield* readTitleUpdates({ thread: { ...untitled, titleSource: "manual" } }),
+    ).toMatchObject({ status: "protected", awaitingInitialTitle: false });
+    expect(
+      yield* readTitleUpdates({
+        thread: { ...untitled, titleSource: "manual", titleRegenerationRequestId: "pending" },
+      }),
+    ).toMatchObject({ status: "regenerating", awaitingInitialTitle: false });
+    expect(yield* readTitleUpdates({ thread: untitled, enabled: false })).toMatchObject({
+      status: "disabled",
+      awaitingInitialTitle: false,
+    });
+  }),
+);
+
 it.effect("fails a missing thread without querying quota", () =>
   getThreadTitleUpdates(ThreadId.make("missing-title-updates")).pipe(
     Effect.provideService(

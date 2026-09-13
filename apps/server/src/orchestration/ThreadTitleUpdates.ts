@@ -38,6 +38,7 @@ export const getThreadTitleUpdates = Effect.fn("getThreadTitleUpdates")(function
 
   const value = thread.value;
   const quota = inspection.value;
+  const awaitingInitialTitle = value.titleSource === null && value.title === DEFAULT_THREAD_TITLE;
   const latestHistory = value.history[0];
   const undoTitle =
     value.titleSource === "generated" &&
@@ -66,15 +67,17 @@ export const getThreadTitleUpdates = Effect.fn("getThreadTitleUpdates")(function
           ? "snoozed"
           : value.settledOverride === "settled"
             ? "settled"
-            : !lifecycleAllowsUpdates ||
-                value.titleSource !== "generated" ||
-                value.title === DEFAULT_THREAD_TITLE
-              ? "protected"
-              : value.titleRegenerationRequestId !== null
-                ? "regenerating"
-                : quota.available
-                  ? "eligible"
-                  : "waiting";
+            : value.titleRegenerationRequestId !== null
+              ? "regenerating"
+              : awaitingInitialTitle
+                ? "waiting"
+                : !lifecycleAllowsUpdates ||
+                    value.titleSource !== "generated" ||
+                    value.title === DEFAULT_THREAD_TITLE
+                  ? "protected"
+                  : quota.available
+                    ? "eligible"
+                    : "waiting";
 
   return {
     threadId,
@@ -84,6 +87,7 @@ export const getThreadTitleUpdates = Effect.fn("getThreadTitleUpdates")(function
     undoTitle,
     profile: settings.automaticThreadTitleRenamePolicy,
     status,
+    awaitingInitialTitle: status === "waiting" && awaitingInitialTitle,
     phase: quota.phase,
     eligibleAt: quota.eligibleAt,
     completedTurns: quota.completedTurns,

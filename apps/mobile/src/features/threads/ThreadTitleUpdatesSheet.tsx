@@ -279,7 +279,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                 </View>
                 <View className="rounded-full bg-subtle px-2.5 py-1">
                   <Text className="text-xs font-t3-bold text-foreground">
-                    {STATUS_LABELS[result.status]}
+                    {result.awaitingInitialTitle ? "Awaiting title" : STATUS_LABELS[result.status]}
                   </Text>
                 </View>
               </View>
@@ -336,7 +336,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                         tintColorClassName="accent-icon-muted"
                         type="monochrome"
                       />
-                      <Text className="font-t3-medium text-foreground">Rename thread</Text>
+                      <Text className="font-t3-medium text-foreground">Rename</Text>
                     </Pressable>
                     {regenerationSupported ? (
                       <Pressable
@@ -356,7 +356,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                           />
                         )}
                         <Text className="font-t3-medium text-foreground">
-                          {regenerating ? "Regenerating…" : "Regenerate title"}
+                          {regenerating ? "Regenerating…" : "Regenerate"}
                         </Text>
                       </Pressable>
                     ) : null}
@@ -371,7 +371,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
               {canRestore && result.undoTitle != null ? (
                 <View className="mt-1 gap-2 rounded-xl bg-subtle px-3 py-3">
                   <Text className="text-sm text-foreground-secondary">
-                    Restore “<Text className="font-t3-medium">{result.undoTitle}</Text>”
+                    Previous title: “<Text className="font-t3-medium">{result.undoTitle}</Text>”
                   </Text>
                   <Pressable
                     accessibilityRole="button"
@@ -398,29 +398,28 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
               ) : null}
             </View>
 
-            <View className="overflow-hidden rounded-2xl bg-card">
-              <DetailRow
-                label="Profile"
-                value={result.profile[0]!.toUpperCase() + result.profile.slice(1)}
-              />
-              <DetailRow
-                label={result.phase === "initial" ? "Completed exchanges" : "Fresh exchanges"}
-                value={`${result.completedTurns} of ${result.requiredTurns}`}
-              />
-              {result.rollingCount !== null && result.rollingMaximum !== null ? (
+            {!result.awaitingInitialTitle &&
+            (result.status === "waiting" || result.status === "eligible") ? (
+              <View className="overflow-hidden rounded-2xl bg-card">
                 <DetailRow
-                  label="Rolling limit"
-                  value={`${result.rollingCount} of ${result.rollingMaximum}${
-                    result.rollingWindowHours === null ? "" : ` in ${result.rollingWindowHours}h`
-                  }`}
+                  label={result.phase === "initial" ? "Completed exchanges" : "Fresh exchanges"}
+                  value={`${result.completedTurns} of ${result.requiredTurns}`}
                 />
-              ) : null}
-              <DetailRow
-                label="Time requirement"
-                value={result.eligibleAt === null ? "—" : formatDate(result.eligibleAt)}
-                last
-              />
-            </View>
+                {result.rollingCount !== null && result.rollingMaximum !== null ? (
+                  <DetailRow
+                    label="Rolling limit"
+                    value={`${result.rollingCount} of ${result.rollingMaximum}${
+                      result.rollingWindowHours === null ? "" : ` in ${result.rollingWindowHours}h`
+                    }`}
+                  />
+                ) : null}
+                <DetailRow
+                  label="Earliest update"
+                  value={result.eligibleAt === null ? "—" : formatDate(result.eligibleAt)}
+                  last
+                />
+              </View>
+            ) : null}
 
             <View className="gap-2">
               <Text className="px-1 text-xs font-t3-bold uppercase tracking-[1px] text-foreground-muted">
@@ -480,9 +479,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                 </View>
               )}
               {result.hasMore ? (
-                <Text className="px-1 text-xs text-foreground-muted">
-                  Older title changes are not included in this snapshot.
-                </Text>
+                <Text className="px-1 text-xs text-foreground-muted">Showing the latest 50.</Text>
               ) : null}
             </View>
           </>

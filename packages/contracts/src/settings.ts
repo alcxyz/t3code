@@ -998,10 +998,11 @@ export const ServerSettings = Schema.Struct({
    * withholds the preview MCP capability and its prompt text. If no other
    * `t3-code` feature is enabled, the shared endpoint is omitted when the
    * provider session starts. Automatic titles may keep that endpoint attached,
-   * but do not grant any `preview_*` tool. Enabling the first MCP feature later
-   * takes effect with the next provider session rather than restarting the
-   * active provider. The user's own browser panel is unaffected — this gates
-   * agent access only.
+   * but do not grant any `preview_*` tool. A provider session started without
+   * any MCP feature waits until its next session to attach the endpoint. Once
+   * attached, the endpoint can become dormant and regain capabilities as
+   * settings change without restarting the provider. The user's own browser
+   * panel is unaffected — this gates agent access only.
    *
    * Server-authoritative rather than client-local: tool injection and prompt
    * construction both happen on the server, and the answer must not differ

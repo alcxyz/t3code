@@ -28,7 +28,7 @@ const insertEvent = (
     readonly commandId: string;
     readonly payload: string;
     readonly eventType?: "thread.created" | "thread.meta-updated" | "thread.message-sent";
-    readonly actorKind?: "client" | "server";
+    readonly actorKind?: "client" | "provider" | "server";
   },
 ) =>
   sql`
@@ -224,6 +224,29 @@ it.layer(NodeSqliteClient.layerMemory())("native title-state compatibility", (it
         });
         yield* reconcileTitleState;
 
+        const checkpointBeforeRollback = yield* sql<{
+          readonly lastEventSequence: number;
+        }>`
+          SELECT last_event_sequence AS "lastEventSequence"
+          FROM fork_projection_thread_title_source_state
+        `;
+        // Simulate returning from the prior broken fork after it rewrote an
+        // already-watermarked native creation without appending an event.
+        yield* sql`
+          UPDATE projection_threads
+          SET title_state_json =
+            '{"source":"manual","version":"native-creation-command","needsRefinement":false}'
+          WHERE thread_id = 'native'
+        `;
+        yield* reconcileTitleState;
+        const checkpointAfterRollback = yield* sql<{
+          readonly lastEventSequence: number;
+        }>`
+          SELECT last_event_sequence AS "lastEventSequence"
+          FROM fork_projection_thread_title_source_state
+        `;
+        assert.deepEqual(checkpointAfterRollback, checkpointBeforeRollback);
+
         const rows = yield* sql<{ readonly id: string; readonly state: string | null }>`
         SELECT thread_id AS id, title_state_json AS state
         FROM projection_threads
@@ -252,6 +275,7 @@ it.layer(NodeSqliteClient.layerMemory())("incremental title-state reconciliation
       yield* insertThread(sql, "changed", "Generated title", "automatic");
       yield* insertThread(sql, "legacy-changed", "Legacy generated title", "automatic");
       yield* insertThread(sql, "native-clear", "Native generated title", "automatic");
+      yield* insertThread(sql, "provider-changed", "New thread", "automatic");
       yield* insertThread(sql, "unchanged", "Other generated title", "automatic");
       yield* insertEvent(sql, {
         id: "changed-generated-event",
@@ -276,6 +300,15 @@ it.layer(NodeSqliteClient.layerMemory())("incremental title-state reconciliation
         commandId: "native-clear-generated-command",
         payload:
           '{"title":"Native generated title","titleState":{"source":"generated","version":"native-clear-generated-command","needsRefinement":false},"titleAutoRenamedAt":"2026-01-02T00:00:00.000Z"}',
+      });
+      yield* insertEvent(sql, {
+        id: "provider-created-event",
+        threadId: "provider-changed",
+        sequence: 1,
+        commandId: "provider-creation-command",
+        eventType: "thread.created",
+        actorKind: "client",
+        payload: '{"title":"New thread"}',
       });
       yield* insertEvent(sql, {
         id: "unchanged-generated-event",
@@ -317,6 +350,11 @@ it.layer(NodeSqliteClient.layerMemory())("incremental title-state reconciliation
         SET title = 'Older fork manual title'
         WHERE thread_id = 'legacy-changed'
       `;
+      yield* sql`
+        UPDATE projection_threads
+        SET title = 'Provider supplied title'
+        WHERE thread_id = 'provider-changed'
+      `;
       yield* sql`DELETE FROM reconciliation_writes`;
       yield* insertEvent(sql, {
         id: "upstream-title-event",
@@ -333,6 +371,14 @@ it.layer(NodeSqliteClient.layerMemory())("incremental title-state reconciliation
         commandId: "older-fork-title-command",
         actorKind: "client",
         payload: '{"title":"Older fork manual title"}',
+      });
+      yield* insertEvent(sql, {
+        id: "provider-title-event",
+        threadId: "provider-changed",
+        sequence: 2,
+        commandId: "provider:native-event:thread-meta-update:uuid",
+        actorKind: "provider",
+        payload: '{"title":"Provider supplied title"}',
       });
       yield* insertEvent(sql, {
         id: "native-refinement-event",
@@ -392,6 +438,15 @@ it.layer(NodeSqliteClient.layerMemory())("incremental title-state reconciliation
             renamedAt: null,
           },
           {
+            id: "provider-changed",
+            state: {
+              source: "generated",
+              version: "provider:native-event:thread-meta-update:uuid",
+              needsRefinement: false,
+            },
+            renamedAt: null,
+          },
+          {
             id: "unchanged",
             state: {
               source: "generated",
@@ -409,6 +464,7 @@ it.layer(NodeSqliteClient.layerMemory())("incremental title-state reconciliation
         { threadId: "changed" },
         { threadId: "legacy-changed" },
         { threadId: "native-clear" },
+        { threadId: "provider-changed" },
       ]);
 
       const checkpoints = yield* sql<{ readonly lastEventSequence: number }>`

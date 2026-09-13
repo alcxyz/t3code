@@ -21,7 +21,6 @@ import {
   closeThreadTitleUpdates,
   useThreadTitleUpdatesPanelStore,
 } from "~/threadTitleUpdatesPanel";
-import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -34,13 +33,6 @@ import {
 import { RefreshIcon } from "./ui/refresh-icon";
 import { Spinner } from "./ui/spinner";
 import { Input } from "./ui/input";
-
-const PROFILE_LABELS = {
-  rare: "Rare",
-  balanced: "Balanced",
-  often: "Often",
-  custom: "Custom",
-} as const;
 
 const STATUS_LABELS = {
   disabled: "Disabled",
@@ -73,8 +65,8 @@ function formatDate(value: string | null): string {
     : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-function statusReason(status: keyof typeof STATUS_LABELS): string {
-  switch (status) {
+function statusReason(data: TitleUpdatesResult): string {
+  switch (data.status) {
     case "disabled":
       return "Automatic title updates are disabled for this environment.";
     case "protected":
@@ -285,7 +277,7 @@ function TitleUpdatesContent({
               <SparklesIcon aria-hidden className="size-4 text-amber-500" />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{liveTitle}</span>
               <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {PROFILE_LABELS[data.profile]}
+                {data.awaitingInitialTitle ? "Awaiting title" : STATUS_LABELS[data.status]}
               </span>
             </div>
             {isEditingTitle ? (
@@ -330,7 +322,7 @@ function TitleUpdatesContent({
                   onClick={startRename}
                 >
                   <PencilIcon aria-hidden className="size-3.5" />
-                  Rename thread
+                  Rename
                 </Button>
                 {regenerationSupported ? (
                   <Button
@@ -344,21 +336,20 @@ function TitleUpdatesContent({
                     ) : (
                       <RotateCwIcon aria-hidden className="size-3.5" />
                     )}
-                    {isRegenerating || isStartingRegeneration
-                      ? "Regenerating…"
-                      : "Regenerate title"}
+                    {isRegenerating || isStartingRegeneration ? "Regenerating…" : "Regenerate"}
                   </Button>
                 ) : null}
               </div>
             )}
-            {statusReason(data.status) ? (
-              <p className="mt-2 text-xs text-muted-foreground">{statusReason(data.status)}</p>
+            {statusReason(data) ? (
+              <p className="mt-2 text-xs text-muted-foreground">{statusReason(data)}</p>
             ) : null}
             {canRestore && data.undoTitle != null ? (
               <div className="mt-3 rounded-md border border-border/60 bg-background/60 p-2.5">
                 <div className="flex items-start justify-between gap-3">
                   <span className="min-w-0 flex-1 break-words pt-1 text-xs text-muted-foreground">
-                    Restore “<span className="font-medium text-foreground">{data.undoTitle}</span>”
+                    Previous title: “
+                    <span className="font-medium text-foreground">{data.undoTitle}</span>”
                   </span>
                   <Button
                     size="xs"
@@ -379,38 +370,29 @@ function TitleUpdatesContent({
                 </p>
               </div>
             ) : null}
-            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              <div>
-                <span className="block text-muted-foreground">Status</span>
-                <span className="font-medium">{STATUS_LABELS[data.status]}</span>
-              </div>
-              <div>
-                <span className="block text-muted-foreground">
-                  {data.phase === "initial" ? "Completed exchanges" : "Fresh exchanges"}
-                </span>
-                <span className="font-mono tabular-nums">
-                  {data.completedTurns} of {data.requiredTurns}
-                </span>
-              </div>
-              {rollingLimit !== null ? (
+            {!data.awaitingInitialTitle &&
+            (data.status === "waiting" || data.status === "eligible") ? (
+              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <div>
-                  <span className="block text-muted-foreground">Rolling limit</span>
-                  <span className="font-mono tabular-nums">{rollingLimit}</span>
+                  <span className="block text-muted-foreground">
+                    {data.phase === "initial" ? "Completed exchanges" : "Fresh exchanges"}
+                  </span>
+                  <span className="font-mono tabular-nums">
+                    {data.completedTurns} of {data.requiredTurns}
+                  </span>
                 </div>
-              ) : null}
-              <div>
-                <span className="block text-muted-foreground">Time requirement</span>
-                <span>
-                  {data.eligibleAt === null
-                    ? "After policy requirements"
-                    : formatDate(data.eligibleAt)}
-                </span>
+                {rollingLimit !== null ? (
+                  <div>
+                    <span className="block text-muted-foreground">Rolling limit</span>
+                    <span className="font-mono tabular-nums">{rollingLimit}</span>
+                  </div>
+                ) : null}
+                <div>
+                  <span className="block text-muted-foreground">Earliest update</span>
+                  <span>{formatDate(data.eligibleAt)}</span>
+                </div>
               </div>
-              <div>
-                <span className="block text-muted-foreground">Checked</span>
-                <span>{formatRelativeTimeLabel(data.checkedAt)}</span>
-              </div>
-            </div>
+            ) : null}
           </section>
 
           <section>
@@ -419,7 +401,7 @@ function TitleUpdatesContent({
                 History
               </h3>
               {data.hasMore ? (
-                <span className="text-[10px] text-muted-foreground">Latest 50</span>
+                <span className="text-[10px] text-muted-foreground">Showing the latest 50.</span>
               ) : null}
             </div>
             {hasRestorableHistoryTitle && data.undoTitle == null ? (
@@ -435,8 +417,12 @@ function TitleUpdatesContent({
                   <div key={entry.id} className="rounded-md border border-border/50 px-2.5 py-2">
                     <div className="flex items-start gap-2 text-xs">
                       <span className="min-w-0 flex-1 break-words">
-                        {entry.previousTitle === null ? "New title" : entry.previousTitle}
-                        <span className="mx-1.5 text-muted-foreground">→</span>
+                        {entry.previousTitle !== null ? (
+                          <>
+                            {entry.previousTitle}
+                            <span className="mx-1.5 text-muted-foreground">→</span>
+                          </>
+                        ) : null}
                         <span className="font-medium">{entry.title}</span>
                       </span>
                       <SourceBadge entry={entry} />

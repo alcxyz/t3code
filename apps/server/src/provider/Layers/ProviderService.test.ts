@@ -4826,7 +4826,7 @@ describe("provider MCP capabilities", () => {
     titleRenameQuotaAvailable: boolean | "error" = true,
     threadTitle = "Browser access test",
     threadTitleAfterStart?: string,
-    automaticThreadTitlesAfterStart?: boolean,
+    automaticThreadTitlesAfterStart?: boolean | ReadonlyArray<boolean>,
     threadLookupFailuresAfterStart = 0,
   ) =>
     Effect.gen(function* () {
@@ -4966,13 +4966,21 @@ describe("provider MCP capabilities", () => {
           runtimeMode: "full-access",
         });
         sessionStarted = true;
-        if (automaticThreadTitlesAfterStart !== undefined) {
+        if (typeof automaticThreadTitlesAfterStart === "boolean") {
           yield* settings.updateSettings({
             automaticThreadTitles: automaticThreadTitlesAfterStart,
           });
         }
         const sendTurnCount = typeof sendTurn === "number" ? sendTurn : sendTurn ? 1 : 0;
         for (let index = 0; index < sendTurnCount; index += 1) {
+          const automaticThreadTitlesForTurn = Array.isArray(automaticThreadTitlesAfterStart)
+            ? automaticThreadTitlesAfterStart[index]
+            : undefined;
+          if (automaticThreadTitlesForTurn !== undefined) {
+            yield* settings.updateSettings({
+              automaticThreadTitles: automaticThreadTitlesForTurn,
+            });
+          }
           yield* provider.sendTurn({ threadId, input: "Continue the task" });
         }
         return session;
@@ -5209,7 +5217,7 @@ describe("provider MCP capabilities", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("revokes attached MCP when settings disable every feature", () =>
+  it.effect("keeps attached MCP dormant while disabled and restores it in place", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-title-disabled-after-start");
       revokedThreads.length = 0;
@@ -5219,22 +5227,29 @@ describe("provider MCP capabilities", () => {
         undefined,
         true,
         "generated",
-        true,
+        2,
         {},
         true,
         true,
         "Browser access test",
         undefined,
-        false,
+        [false, true],
       );
 
       assert.deepEqual(issued[0]?.capabilities, ["thread-title"]);
-      assert.deepEqual(revokedThreads, [threadId]);
+      assert.deepEqual(revokedThreads, []);
       assert.equal(codex.startSession.mock.calls.length, 1);
-      const turnInput = codex.sendTurn.mock.calls[0]?.[0] as
+      const disabledTurn = codex.sendTurn.mock.calls[0]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
-      assert.equal(turnInput?.runtimeInstructions, undefined);
+      assert.equal(disabledTurn?.runtimeInstructions, undefined);
+      const reenabledTurn = codex.sendTurn.mock.calls[1]?.[0] as
+        | ProviderAdapterSendTurnInput
+        | undefined;
+      assert.deepEqual(reenabledTurn?.runtimeInstructions, {
+        browserToolsAvailable: false,
+        currentThreadTitle: "Browser access test",
+      });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
