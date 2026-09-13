@@ -25,7 +25,6 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { Button } from "./ui/button";
 import {
   Dialog,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogPanel,
@@ -79,7 +78,7 @@ function statusReason(status: keyof typeof STATUS_LABELS): string {
     case "disabled":
       return "Automatic title updates are disabled for this environment.";
     case "protected":
-      return "This thread is protected from automatic title changes.";
+      return "Protected title. Regenerate to resume automatic updates.";
     case "archived":
       return "Archived threads do not receive automatic title updates.";
     case "deleted":
@@ -91,9 +90,9 @@ function statusReason(status: keyof typeof STATUS_LABELS): string {
     case "regenerating":
       return "A title regeneration request is already running.";
     case "waiting":
-      return "Waiting for the time and activity requirements below.";
+      return "";
     case "eligible":
-      return "Eligible—updates only when the thread objective meaningfully changes.";
+      return "Updates only when the objective changes.";
   }
 }
 
@@ -352,7 +351,9 @@ function TitleUpdatesContent({
                 ) : null}
               </div>
             )}
-            <p className="mt-2 text-xs text-muted-foreground">{statusReason(data.status)}</p>
+            {statusReason(data.status) ? (
+              <p className="mt-2 text-xs text-muted-foreground">{statusReason(data.status)}</p>
+            ) : null}
             {canRestore && data.undoTitle != null ? (
               <div className="mt-3 rounded-md border border-border/60 bg-background/60 p-2.5">
                 <div className="flex items-start justify-between gap-3">
@@ -374,8 +375,7 @@ function TitleUpdatesContent({
                   </Button>
                 </div>
                 <p className="mt-2 text-[11px] text-muted-foreground">
-                  Restoring makes the title manual, protecting it from automatic changes. Use
-                  Regenerate title to resume automatic updates.
+                  Restoring protects this title from automatic changes.
                 </p>
               </div>
             ) : null}
@@ -383,12 +383,6 @@ function TitleUpdatesContent({
               <div>
                 <span className="block text-muted-foreground">Status</span>
                 <span className="font-medium">{STATUS_LABELS[data.status]}</span>
-              </div>
-              <div>
-                <span className="block text-muted-foreground">Phase</span>
-                <span className="font-medium">
-                  {data.phase === "initial" ? "First automatic update" : "Recurring"}
-                </span>
               </div>
               <div>
                 <span className="block text-muted-foreground">
@@ -424,14 +418,13 @@ function TitleUpdatesContent({
               <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 History
               </h3>
-              <span className="text-[10px] text-muted-foreground">
-                {data.hasMore ? "Recent 50 changes" : "Recorded changes"}
-              </span>
+              {data.hasMore ? (
+                <span className="text-[10px] text-muted-foreground">Latest 50</span>
+              ) : null}
             </div>
-            {hasRestorableHistoryTitle ? (
+            {hasRestorableHistoryTitle && data.undoTitle == null ? (
               <p className="mb-2 text-xs text-muted-foreground">
-                Restoring makes a title manual, protecting it from automatic changes. Regenerate the
-                title to resume automatic updates.
+                Restoring protects the chosen title from automatic changes.
               </p>
             ) : null}
             {data.history.length === 0 ? (
@@ -499,9 +492,6 @@ export function ThreadTitleUpdatesPanel() {
             <SparklesIcon aria-hidden className="size-4 text-amber-500" />
             Title updates
           </DialogTitle>
-          <DialogDescription>
-            Manage this thread’s title and see its update history and eligibility.
-          </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-3" scrollFade={false}>
           {!supported ? (
@@ -525,9 +515,6 @@ export function ThreadTitleUpdatesPanel() {
           )}
         </DialogPanel>
         <DialogFooter variant="bare" className="items-center sm:justify-between">
-          <span className="text-xs text-muted-foreground">
-            Eligibility does not schedule a rename.
-          </span>
           {supported ? <TitleUpdatesRefreshButton /> : null}
         </DialogFooter>
       </DialogPopup>

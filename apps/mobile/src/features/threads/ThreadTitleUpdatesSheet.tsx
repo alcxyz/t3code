@@ -66,13 +66,13 @@ function formatDate(value: string): string {
 function eligibilityMessage(result: OrchestrationGetTitleUpdatesResult): string {
   switch (result.status) {
     case "eligible":
-      return "Eligible now. The thread objective must change before an automatic title update can run.";
+      return "Updates only when the objective changes.";
     case "waiting":
-      return "Waiting for the time and activity requirements below.";
+      return "";
     case "disabled":
       return "Automatic title updates are disabled for this server.";
     case "protected":
-      return "This title is protected from automatic updates.";
+      return "Protected title. Regenerate to resume automatic updates.";
     case "archived":
       return "Archived threads are not eligible for automatic title updates.";
     case "deleted":
@@ -273,9 +273,6 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
             <View className="gap-3 rounded-2xl bg-card px-4 py-4">
               <View className="flex-row items-start gap-3">
                 <View className="min-w-0 flex-1 gap-1">
-                  <Text className="text-xs font-t3-bold uppercase tracking-[1px] text-foreground-muted">
-                    Current title
-                  </Text>
                   <Text className="text-xl font-t3-bold text-foreground" selectable>
                     {currentTitle}
                   </Text>
@@ -366,12 +363,11 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                   </View>
                 )
               ) : null}
-              <Text className="text-sm leading-5 text-foreground-secondary">
-                {eligibilityMessage(result)}
-              </Text>
-              <Text className="text-xs text-foreground-muted">
-                Checked by the server {formatDate(result.checkedAt)}
-              </Text>
+              {eligibilityMessage(result) ? (
+                <Text className="text-sm leading-5 text-foreground-secondary">
+                  {eligibilityMessage(result)}
+                </Text>
+              ) : null}
               {canRestore && result.undoTitle != null ? (
                 <View className="mt-1 gap-2 rounded-xl bg-subtle px-3 py-3">
                   <Text className="text-sm text-foreground-secondary">
@@ -396,8 +392,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                     <Text className="font-t3-medium text-foreground">Undo rename</Text>
                   </Pressable>
                   <Text className="text-xs leading-4 text-foreground-muted">
-                    Restoring makes the title manual, protecting it from automatic changes. Use
-                    Regenerate title to resume automatic updates.
+                    Restoring protects this title from automatic changes.
                   </Text>
                 </View>
               ) : null}
@@ -409,11 +404,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                 value={result.profile[0]!.toUpperCase() + result.profile.slice(1)}
               />
               <DetailRow
-                label="Phase"
-                value={result.phase === "initial" ? "First automatic update" : "Recurring updates"}
-              />
-              <DetailRow
-                label="Completed exchanges"
+                label={result.phase === "initial" ? "Completed exchanges" : "Fresh exchanges"}
                 value={`${result.completedTurns} of ${result.requiredTurns}`}
               />
               {result.rollingCount !== null && result.rollingMaximum !== null ? (
@@ -435,10 +426,9 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
               <Text className="px-1 text-xs font-t3-bold uppercase tracking-[1px] text-foreground-muted">
                 History
               </Text>
-              {hasRestorableHistoryTitle ? (
+              {hasRestorableHistoryTitle && result.undoTitle == null ? (
                 <Text className="px-1 text-xs leading-4 text-foreground-muted">
-                  Restoring makes a title manual, protecting it from automatic changes. Use
-                  Regenerate title to resume automatic updates.
+                  Restoring protects the chosen title from automatic changes.
                 </Text>
               ) : null}
               {result.history.length === 0 ? (
