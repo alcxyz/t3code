@@ -100,7 +100,7 @@ export function buildThreadActionMenuItems(
       : []),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
     ...(state.supports.titleUpdates
-      ? [{ id: "title-updates" as const, label: "Title updates", icon: "history" }]
+      ? [{ id: "title-updates" as const, label: "Title updates", icon: "sparkles" }]
       : []),
     ...(state.supports.titleRegeneration
       ? [

@@ -2228,7 +2228,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             ? [{ id: "new-thread-on-branch", label: `New thread on ${thread.branch}` }]
             : []),
           ...(readEnvironmentSupportsTitleUpdates(thread.environmentId)
-            ? [{ id: "title-updates", label: "Title updates", icon: "history" }]
+            ? [{ id: "title-updates", label: "Title updates", icon: "sparkles" }]
             : []),
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
