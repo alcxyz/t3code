@@ -29,6 +29,7 @@ import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr } from "../../state/use-thread-pr";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
+import { isThreadTitleRenameActive } from "./threadPresentation";
 import {
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozeGateExpiryMs,
@@ -38,6 +39,7 @@ import {
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
+import { ThreadTitleUpdateIndicator } from "./thread-title-update-indicator";
 
 /**
  * Thread List v2 renders one flat native list: rich edge-to-edge rows for
@@ -460,6 +462,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const status = resolveThreadListV2Status(thread);
   const statusLabel = STATUS_LABEL_BY_STATUS[status];
+  const titleRenameActive = props.titleUpdatesSupported && isThreadTitleRenameActive(thread);
+  const titleRenameIconTint = selected
+    ? materialYouStyleLayoutActive
+      ? "accent-thread-selected-foreground"
+      : "accent-user-bubble-foreground"
+    : "accent-icon-subtle";
   // Settled rows label by the same stamp they sort by, so order and label
   // can't disagree. updatedAt is always present, so the resolver never
   // returns null here.
@@ -472,6 +480,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
+  );
+  const handleOpenTitleUpdates = useCallback(
+    () => onOpenTitleUpdates(thread),
+    [onOpenTitleUpdates, thread],
   );
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
   const handleSnooze = useCallback(
@@ -786,19 +798,28 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           {statusLabel?.label ?? timeLabel}
         </Text>
       </View>
-      <Text
-        className={cn(
-          "mt-1 text-base font-t3-medium",
-          selected
-            ? materialYouStyleLayoutActive
-              ? "text-thread-selected-foreground"
-              : "text-user-bubble-foreground"
-            : "text-foreground",
-        )}
-        numberOfLines={2}
-      >
-        {thread.title}
-      </Text>
+      <View className="mt-1 flex-row items-center gap-1.5">
+        <Text
+          className={cn(
+            "min-w-0 flex-1 text-base font-t3-medium",
+            selected
+              ? materialYouStyleLayoutActive
+                ? "text-thread-selected-foreground"
+                : "text-user-bubble-foreground"
+              : "text-foreground",
+          )}
+          numberOfLines={2}
+        >
+          {thread.title}
+        </Text>
+        {titleRenameActive ? (
+          <ThreadTitleUpdateIndicator
+            compact={false}
+            onPress={handleOpenTitleUpdates}
+            tintColorClassName={titleRenameIconTint}
+          />
+        ) : null}
+      </View>
       {props.searchMatch ? (
         <View className="mt-1">
           <ThreadSearchMatchExcerpt
@@ -1011,19 +1032,28 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </View>
           ) : null}
           <View className="min-w-0 flex-1">
-            <Text
-              className={cn(
-                "text-base",
-                selected
-                  ? materialYouStyleLayoutActive
-                    ? "text-thread-selected-foreground"
-                    : "text-user-bubble-foreground"
-                  : "text-foreground-muted",
-              )}
-              numberOfLines={1}
-            >
-              {thread.title}
-            </Text>
+            <View className="flex-row items-center gap-1.5">
+              <Text
+                className={cn(
+                  "min-w-0 flex-1 text-base",
+                  selected
+                    ? materialYouStyleLayoutActive
+                      ? "text-thread-selected-foreground"
+                      : "text-user-bubble-foreground"
+                    : "text-foreground-muted",
+                )}
+                numberOfLines={1}
+              >
+                {thread.title}
+              </Text>
+              {titleRenameActive ? (
+                <ThreadTitleUpdateIndicator
+                  compact={false}
+                  onPress={handleOpenTitleUpdates}
+                  tintColorClassName={titleRenameIconTint}
+                />
+              ) : null}
+            </View>
             {props.searchMatch ? (
               <ThreadSearchMatchExcerpt
                 match={props.searchMatch}

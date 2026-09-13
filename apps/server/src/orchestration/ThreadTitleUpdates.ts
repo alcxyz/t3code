@@ -38,6 +38,14 @@ export const getThreadTitleUpdates = Effect.fn("getThreadTitleUpdates")(function
 
   const value = thread.value;
   const quota = inspection.value;
+  const latestHistory = value.history[0];
+  const undoTitle =
+    value.titleSource === "generated" &&
+    value.titleRegenerationRequestId === null &&
+    latestHistory?.source === "automatic" &&
+    latestHistory.version === value.titleVersion
+      ? latestHistory.previousTitle
+      : null;
   const lifecycleAllowsUpdates = allowsAutomaticThreadTitleUpdate(
     {
       archivedAt: value.archivedAt,
@@ -72,6 +80,8 @@ export const getThreadTitleUpdates = Effect.fn("getThreadTitleUpdates")(function
     threadId,
     checkedAt: quota.checkedAt,
     currentTitle: value.title,
+    currentVersion: value.titleVersion,
+    undoTitle,
     profile: settings.automaticThreadTitleRenamePolicy,
     status,
     phase: quota.phase,

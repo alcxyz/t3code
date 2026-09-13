@@ -1998,26 +1998,26 @@ describe("resolveThreadStatusPill", () => {
     ).toBeNull();
   });
 
-  it("shows an automatic rename until a newer user message starts", () => {
+  it("keeps working and completed status independent of automatic rename notices", () => {
+    const renamed = { titleAutoRenamedAt: "2026-03-09T10:05:30.000Z" };
+    const workingThread = { ...baseThread, ...renamed };
+    expect(resolveThreadStatusPill({ thread: workingThread })).toEqual(
+      resolveThreadStatusPill({ thread: baseThread }),
+    );
+    const completedThread = {
+      ...baseThread,
+      interactionMode: "default" as const,
+      latestTurn: makeLatestTurn(),
+      lastVisitedAt: "2026-03-09T10:04:00.000Z",
+      session: { ...baseThread.session, status: "ready" as const, activeTurnId: null },
+      ...renamed,
+    };
+    expect(hasActiveAutomaticRename(completedThread)).toBe(true);
+    expect(resolveThreadStatusPill({ thread: completedThread })).toMatchObject({
+      label: "Completed",
+    });
     expect(
-      resolveThreadStatusPill({
-        thread: {
-          ...baseThread,
-          titleAutoRenamedAt: "2026-03-09T09:01:00.000Z",
-          session: null,
-        },
-      }),
-    ).toMatchObject({ label: "Renamed", pulse: false });
-
-    expect(
-      resolveThreadStatusPill({
-        thread: {
-          ...baseThread,
-          latestUserMessageAt: "2026-03-09T09:02:00.000Z",
-          titleAutoRenamedAt: "2026-03-09T09:01:00.000Z",
-          session: null,
-        },
-      }),
+      resolveThreadStatusPill({ thread: { ...baseThread, ...renamed, session: null } }),
     ).toBeNull();
   });
 

@@ -123,6 +123,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands regenerateTitle on thread.meta.update. Absent on
       older servers, so clients hide the action instead of sending it. */
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
+  /** Server understands guarded thread.title.restore commands. */
+  threadTitleRestore: Schema.optionalKey(Schema.Boolean),
   /** Server persists and applies automaticThreadTitles. */
   automaticThreadTitles: Schema.optionalKey(Schema.Boolean),
   threadTitleUpdates: Schema.optionalKey(Schema.Boolean),

@@ -4,11 +4,18 @@ import type {
   OrchestrationGetTitleUpdatesResult,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import { SparklesIcon } from "lucide-react";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import { SparklesIcon, Undo2Icon } from "lucide-react";
+import { useState } from "react";
 
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { useEnvironmentQuery } from "~/state/query";
 import { environmentServerConfigsAtom } from "~/state/server";
+import { threadEnvironment } from "~/state/threads";
+import { useAtomCommand } from "~/state/use-atom-command";
 import {
   closeThreadTitleUpdates,
   useThreadTitleUpdatesPanelStore,
@@ -25,6 +32,7 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { RefreshIcon } from "./ui/refresh-icon";
+import { Spinner } from "./ui/spinner";
 
 const PROFILE_LABELS = {
   rare: "Rare",
@@ -87,23 +95,21 @@ function statusReason(status: keyof typeof STATUS_LABELS): string {
   }
 }
 
-function SourceBadge({
-  source,
-}: {
-  readonly source: TitleUpdatesResult["history"][number]["source"];
-}) {
+function SourceBadge({ entry }: { readonly entry: TitleUpdatesResult["history"][number] }) {
   return (
     <span className="rounded-sm border border-border/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-      {SOURCE_LABELS[source]}
+      {entry.isRestoration === true ? "Restored" : SOURCE_LABELS[entry.source]}
     </span>
   );
 }
 
 function TitleUpdatesContent({
   environmentId,
+  restorationSupported,
   threadRef,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly restorationSupported: boolean;
   readonly threadRef: ScopedThreadRef;
 }) {
   const query = useEnvironmentQuery(
@@ -112,7 +118,39 @@ function TitleUpdatesContent({
       input: { threadId: threadRef.threadId },
     }),
   );
+  const restoreThreadTitle = useAtomCommand(threadEnvironment.restoreTitle, {
+    reportFailure: false,
+  });
+  const [restoringTarget, setRestoringTarget] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const data = query.data;
+  const canRestore =
+    restorationSupported &&
+    data !== null &&
+    data.currentVersion !== undefined &&
+    data.status !== "deleted" &&
+    data.status !== "regenerating";
+  const hasRestorableHistoryTitle =
+    canRestore && data.history.some((entry) => entry.title !== data.currentTitle);
+  const restoreTitle = async (target: string, title: string) => {
+    if (!canRestore || data === null || data.currentVersion === undefined) return;
+    setRestoringTarget(target);
+    setRestoreError(null);
+    const result = await restoreThreadTitle({
+      environmentId,
+      input: { threadId: threadRef.threadId, title, expectedVersion: data.currentVersion },
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      setRestoreError(
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : "The title could not be restored.",
+      );
+    }
+    setRestoringTarget(null);
+    query.refresh();
+  };
   const rollingLimit = (() => {
     if (data?.rollingMaximum === null || data?.rollingMaximum === undefined) return null;
     const windowLabel =
@@ -137,6 +175,14 @@ function TitleUpdatesContent({
         <p className="text-sm text-muted-foreground">No title update details are available.</p>
       ) : (
         <div className="space-y-4">
+          {restoreError !== null ? (
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground"
+            >
+              {restoreError}
+            </p>
+          ) : null}
           <section className="rounded-lg border border-border/60 bg-card/30 p-3">
             <div className="flex items-center gap-2">
               <SparklesIcon aria-hidden className="size-4 text-amber-500" />
@@ -148,6 +194,32 @@ function TitleUpdatesContent({
               </span>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">{statusReason(data.status)}</p>
+            {canRestore && data.undoTitle != null ? (
+              <div className="mt-3 rounded-md border border-border/60 bg-background/60 p-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="min-w-0 flex-1 break-words pt-1 text-xs text-muted-foreground">
+                    Restore “<span className="font-medium text-foreground">{data.undoTitle}</span>”
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={restoringTarget !== null || query.isPending}
+                    onClick={() => void restoreTitle("undo", data.undoTitle!)}
+                  >
+                    {restoringTarget === "undo" ? (
+                      <Spinner aria-hidden className="size-3.5" />
+                    ) : (
+                      <Undo2Icon aria-hidden className="size-3.5" />
+                    )}
+                    Undo rename
+                  </Button>
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Restoring makes the title manual, protecting it from automatic changes. Use
+                  Regenerate title in the thread menu to resume automatic updates.
+                </p>
+              </div>
+            ) : null}
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <div>
                 <span className="block text-muted-foreground">Status</span>
@@ -197,6 +269,12 @@ function TitleUpdatesContent({
                 {data.hasMore ? "Recent 50 changes" : "Recorded changes"}
               </span>
             </div>
+            {hasRestorableHistoryTitle ? (
+              <p className="mb-2 text-xs text-muted-foreground">
+                Restoring makes a title manual, protecting it from automatic changes. Use Regenerate
+                title in the thread menu to resume automatic updates.
+              </p>
+            ) : null}
             {data.history.length === 0 ? (
               <p className="text-xs text-muted-foreground">No title changes recorded yet.</p>
             ) : (
@@ -209,14 +287,26 @@ function TitleUpdatesContent({
                         <span className="mx-1.5 text-muted-foreground">→</span>
                         <span className="font-medium">{entry.title}</span>
                       </span>
-                      <SourceBadge source={entry.source} />
+                      <SourceBadge entry={entry} />
                     </div>
-                    <time
-                      dateTime={entry.at}
-                      className="mt-1 block text-[10px] text-muted-foreground"
-                    >
-                      {formatDate(entry.at)}
-                    </time>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <time dateTime={entry.at} className="text-[10px] text-muted-foreground">
+                        {formatDate(entry.at)}
+                      </time>
+                      {canRestore && entry.title !== data.currentTitle ? (
+                        <Button
+                          size="micro"
+                          variant="ghost-muted"
+                          disabled={restoringTarget !== null || query.isPending}
+                          onClick={() => void restoreTitle(entry.id, entry.title)}
+                        >
+                          {restoringTarget === entry.id ? (
+                            <Spinner aria-hidden className="size-3" />
+                          ) : null}
+                          Restore this title
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -260,7 +350,15 @@ export function ThreadTitleUpdatesPanel() {
               Title update details require a newer server for this environment.
             </p>
           ) : (
-            <TitleUpdatesContent environmentId={threadRef.environmentId} threadRef={threadRef} />
+            <TitleUpdatesContent
+              key={`${threadRef.environmentId}:${threadRef.threadId}`}
+              environmentId={threadRef.environmentId}
+              restorationSupported={
+                serverConfigs.get(threadRef.environmentId)?.environment.capabilities
+                  .threadTitleRestore === true
+              }
+              threadRef={threadRef}
+            />
           )}
         </DialogPanel>
         <DialogFooter variant="bare" className="items-center sm:justify-between">

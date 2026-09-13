@@ -44,6 +44,7 @@ export type UnpinThreadInput = CommandInput<"thread.unpin">;
 export type ReorderPinnedThreadInput = CommandInput<"thread.pin.reorder">;
 export type ReorderActiveThreadInput = CommandInput<"thread.active.reorder">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
+export type RestoreThreadTitleInput = CommandInput<"thread.title.restore">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
 export type StartThreadTurnInput = CommandInput<"thread.turn.start">;
@@ -248,6 +249,16 @@ export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => Command
   return yield* dispatch({
     ...input,
     type: "thread.meta.update",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const restoreThreadTitle: (input: RestoreThreadTitleInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.restoreThreadTitle",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "thread.title.restore",
     commandId: yield* commandId(input),
   });
 });

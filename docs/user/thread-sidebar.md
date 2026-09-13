@@ -112,6 +112,10 @@ naming from recurring updates when the history records the source. **Eligible** 
 may update the title if the objective changes; it does not schedule a rename. Use **Refresh** to
 check again after more activity. The panel requires a supporting server.
 
+Restoring a title from **Title updates** protects it from automatic changes. **Undo rename**
+restores the title before the latest automatic update; older entries offer **Restore this title**.
+Choose **Regenerate title** from the thread menu to resume automatic title updates.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

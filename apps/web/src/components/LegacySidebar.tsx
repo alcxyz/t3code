@@ -16,6 +16,7 @@ import {
   PrStatusTooltipContent,
   terminalStatusFromRunningIds,
   ThreadStatusLabel,
+  ThreadRenameIndicator,
   ThreadWorktreeIndicator,
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
@@ -731,21 +732,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               </TooltipPopup>
             </Tooltip>
           )}
-          {threadStatus ? (
-            <ThreadStatusLabel
-              status={threadStatus}
-              {...(threadStatus.label === "Renamed" &&
-              readEnvironmentSupportsTitleUpdates(thread.environmentId)
-                ? {
-                    onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openThreadTitleUpdates(threadRef);
-                    },
-                  }
-                : {})}
-            />
-          ) : null}
+          {threadStatus ? <ThreadStatusLabel status={threadStatus} /> : null}
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}
@@ -774,6 +761,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               </TooltipPopup>
             </Tooltip>
           )}
+          <ThreadRenameIndicator
+            thread={thread}
+            onClick={
+              readEnvironmentSupportsTitleUpdates(thread.environmentId)
+                ? (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openThreadTitleUpdates(threadRef);
+                  }
+                : undefined
+            }
+          />
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {discoveredPorts.length > 0 && (

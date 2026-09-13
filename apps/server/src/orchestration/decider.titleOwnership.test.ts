@@ -155,6 +155,96 @@ it.layer(NodeServices.layer)("recurring title ownership", (it) => {
       expect(value.payload).not.toHaveProperty("titleAutoRenamedAt");
     }),
   );
+  it.effect("restores a captured title as manual ownership and rejects stale restoration", () =>
+    Effect.gen(function* () {
+      const currentVersion = CommandId.make("agent-thread-title:current");
+      const model = makeReadModel({
+        title: "Current automatic title",
+        titleAutoRenamedAt: NOW,
+        titleState: { ...generated, version: currentVersion },
+      });
+      const command = {
+        type: "thread.title.restore" as const,
+        commandId: CommandId.make("restore-title"),
+        threadId: THREAD_ID,
+        title: "Earlier title",
+        expectedVersion: currentVersion,
+      };
+      const decided = yield* decideOrchestrationCommand({ command, readModel: model });
+      const event = Array.isArray(decided) ? decided[0]! : decided;
+      expect(event).toMatchObject({
+        type: "thread.meta-updated",
+        payload: {
+          title: "Earlier title",
+          titleRestoration: true,
+          titleAutoRenamedAt: null,
+          titleState: {
+            source: "manual",
+            version: "restore-title",
+            needsRefinement: false,
+          },
+        },
+      });
+      const projected = yield* projectEvent(model, { ...event, sequence: 1 });
+      expect(projected.threads[0]).toMatchObject({
+        title: "Earlier title",
+        titleAutoRenamedAt: null,
+        titleState: { source: "manual", version: "restore-title" },
+      });
+
+      const sameText = yield* decideOrchestrationCommand({
+        command: {
+          ...command,
+          commandId: CommandId.make("restore-same-title"),
+          title: model.threads[0]!.title,
+        },
+        readModel: model,
+      });
+      expect(sameText).toMatchObject({
+        payload: {
+          title: "Current automatic title",
+          titleAutoRenamedAt: null,
+          titleState: { source: "manual", version: "restore-same-title" },
+        },
+      });
+
+      for (const overrides of [
+        { titleState: { ...generated, version: CommandId.make("newer-title") } },
+        {
+          titleState: { ...generated, version: currentVersion },
+          titleRegeneration: { requestId: CommandId.make("pending"), startedAt: NOW },
+        },
+        { titleState: { ...generated, version: currentVersion }, deletedAt: NOW },
+      ] satisfies ReadonlyArray<Partial<OrchestrationThread>>) {
+        const error = yield* decideOrchestrationCommand({
+          command,
+          readModel: makeReadModel(overrides),
+        }).pipe(Effect.flip);
+        expect(error).toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
+      }
+    }),
+  );
+  it.effect("allows manual restoration across retained lifecycle states", () =>
+    Effect.gen(function* () {
+      for (const lifecycle of [
+        { archivedAt: NOW },
+        { settledOverride: "settled" as const },
+        { snoozedUntil: "2026-01-02T00:00:00.000Z" },
+      ] satisfies ReadonlyArray<Partial<OrchestrationThread>>) {
+        const event = yield* decideOrchestrationCommand({
+          command: {
+            type: "thread.title.restore",
+            commandId: CommandId.make("restore-lifecycle-title"),
+            threadId: THREAD_ID,
+            title: "Earlier title",
+            expectedVersion: generated.version,
+          },
+          readModel: makeReadModel({ titleState: generated, ...lifecycle }),
+        });
+        expect(event).toMatchObject({ payload: { title: "Earlier title" } });
+      }
+    }),
+  );
   it.effect("native initial generation never sets the recurring rename badge", () =>
     Effect.gen(function* () {
       const event = yield* decideOrchestrationCommand({

@@ -25,6 +25,7 @@ import {
   archiveThread,
   createProject,
   reorderActiveThread,
+  restoreThreadTitle,
   settleThread,
   stopThreadSession,
   unsettleThread,
@@ -138,6 +139,30 @@ describe("environment commands", () => {
           type: "thread.archive",
           commandId: "archive-command",
           threadId: "thread-1",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches a guarded title restoration without a timestamp", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* restoreThreadTitle({
+        commandId: CommandId.make("restore-command"),
+        threadId: ThreadId.make("thread-1"),
+        title: "Earlier title",
+        expectedVersion: CommandId.make("current-title-version"),
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.title.restore",
+          commandId: "restore-command",
+          threadId: "thread-1",
+          title: "Earlier title",
+          expectedVersion: "current-title-version",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),

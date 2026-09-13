@@ -150,7 +150,6 @@ import {
   filterSidebarProjectScopeItems,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
-  hasActiveAutomaticRename,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
@@ -189,6 +188,7 @@ import { SidebarDragLifecycle, SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
 import {
   ThreadWorktreeIndicator,
+  ThreadRenameIndicator,
   prStatusIndicator,
   settledPrHoverColorClass,
   terminalStatusFromRunningIds,
@@ -1087,14 +1087,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     wokeAtDate !== null &&
     (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
     thread.settledOverride !== "settled";
-  const isAutoRenamed = hasActiveAutomaticRename(thread);
   // Background work always recedes when it is not selected: an unread parent
   // completion must not pull a still-working thread back into the foreground.
   // Ready and action-required rows keep their unread and wake prominence.
   const shouldRecede = shouldRecedeSidebarThread({
     status,
     isUnread,
-    isWoke: isWoke || isAutoRenamed,
+    isWoke,
     isActive: props.isActive,
     isSelected,
   });
@@ -1145,21 +1144,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     icon: "woke" as const,
                     className: "text-amber-700 dark:text-amber-300",
                   }
-                : isAutoRenamed
+                : isUnread
                   ? {
-                      label: "Renamed",
-                      icon: null,
-                      className: "text-amber-700 dark:text-amber-300",
+                      label: "Done",
+                      icon: "done" as const,
+                      className: "text-emerald-700 dark:text-emerald-300",
                     }
-                  : isUnread
-                    ? {
-                        label: "Done",
-                        icon: "done" as const,
-                        className: "text-emerald-700 dark:text-emerald-300",
-                      }
-                    : null;
+                  : null;
   const isWokeStatus = topStatus?.icon === "woke";
-  const isRenamedStatus = topStatus?.label === "Renamed";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
@@ -1453,7 +1445,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               "truncate",
               shouldRecede
                 ? "text-secondary-label"
-                : isUnread || isWoke || isAutoRenamed
+                : isUnread || isWoke
                   ? "text-foreground"
                   : status === "failed"
                     ? "text-foreground/95"
@@ -1463,7 +1455,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               "truncate group-hover/sidebar-row:text-foreground",
               shouldRecede
                 ? "text-secondary-label/70"
-                : props.isActive || isWoke || isAutoRenamed
+                : props.isActive || isWoke
                   ? "text-foreground"
                   : isUnread
                     ? "text-muted-foreground"
@@ -1598,6 +1590,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             </span>
             {draftIndicator}
             {title}
+            <ThreadRenameIndicator
+              thread={thread}
+              onClick={props.titleUpdatesSupported ? handleTitleUpdatesClick : undefined}
+            />
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -1770,7 +1766,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     while the other controls appear beside it. */}
                   <span
                     className={cn(
-                      isWokeStatus || (isRenamedStatus && props.titleUpdatesSupported)
+                      isWokeStatus
                         ? "pointer-events-auto"
                         : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-hover/sidebar-row:absolute group-hover/sidebar-row:right-0 group-hover/sidebar-row:opacity-0",
                       "flex items-center self-center justify-self-end tabular-nums text-secondary-label transition-opacity",
@@ -1798,19 +1794,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           />
                           <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                         </Tooltip>
-                      ) : isRenamedStatus && props.titleUpdatesSupported ? (
-                        <button
-                          type="button"
-                          aria-label="View title updates"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={handleTitleUpdatesClick}
-                          className={cn(
-                            "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring",
-                            topStatus.className,
-                          )}
-                        >
-                          <span role="status">{topStatus.label}</span>
-                        </button>
                       ) : (
                         <span
                           className={cn(
@@ -1898,8 +1881,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-            <div className="mt-1 flex min-w-0">
+            <div className="mt-1 flex min-w-0 items-center gap-1">
               {title}
+              <ThreadRenameIndicator
+                thread={thread}
+                onClick={props.titleUpdatesSupported ? handleTitleUpdatesClick : undefined}
+              />
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title

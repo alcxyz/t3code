@@ -1,8 +1,20 @@
 import type { OrchestrationGetTitleUpdatesResult } from "@t3tools/contracts";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  View,
+} from "react-native";
 
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
@@ -11,6 +23,8 @@ import { SymbolView } from "../../components/AppSymbol";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentServerConfigsAtom } from "../../state/server";
+import { threadEnvironment } from "../../state/threads";
+import { useAtomCommand } from "../../state/use-atom-command";
 
 type ThreadTitleUpdatesSheetProps = StaticScreenProps<{
   readonly environmentId: string;
@@ -97,12 +111,50 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const supported =
     serverConfigs.get(environmentId)?.environment.capabilities.threadTitleUpdates === true;
+  const restorationSupported =
+    serverConfigs.get(environmentId)?.environment.capabilities.threadTitleRestore === true;
   const query = useEnvironmentQuery(
     supported
       ? orchestrationEnvironment.titleUpdates({ environmentId, input: { threadId } })
       : null,
   );
+  const restoreThreadTitle = useAtomCommand(threadEnvironment.restoreTitle, {
+    reportFailure: false,
+  });
+  const [restoringTarget, setRestoringTarget] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const result = query.data;
+  const canRestore =
+    restorationSupported &&
+    result !== null &&
+    result.currentVersion !== undefined &&
+    result.status !== "deleted" &&
+    result.status !== "regenerating";
+  const hasRestorableHistoryTitle =
+    canRestore && result.history.some((entry) => entry.title !== result.currentTitle);
+  const restoreTitle = async (target: string, title: string) => {
+    if (!canRestore || result === null || result.currentVersion === undefined) return;
+    setRestoringTarget(target);
+    setRestoreError(null);
+    const response = await restoreThreadTitle({
+      environmentId,
+      input: { threadId, title, expectedVersion: result.currentVersion },
+    });
+    if (response._tag === "Failure" && !isAtomCommandInterrupted(response)) {
+      const error = squashAtomCommandFailure(response);
+      setRestoreError(
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : "The title could not be restored.",
+      );
+    }
+    setRestoringTarget(null);
+    query.refresh();
+  };
+  const refresh = () => {
+    setRestoreError(null);
+    query.refresh();
+  };
 
   return (
     <View className="flex-1 bg-sheet-solid">
@@ -115,7 +167,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
               accessibilityLabel: "Refresh title updates",
               disabled: query.isPending,
               icon: "arrow.clockwise",
-              onPress: query.refresh,
+              onPress: refresh,
             },
           ]}
         />
@@ -124,13 +176,11 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
       <ScrollView
         contentContainerClassName="gap-5 px-4 pb-10 pt-4"
         refreshControl={
-          <RefreshControl
-            refreshing={query.isPending && result !== null}
-            onRefresh={query.refresh}
-          />
+          <RefreshControl refreshing={query.isPending && result !== null} onRefresh={refresh} />
         }
       >
         {query.error ? <ErrorBanner message={query.error} /> : null}
+        {restoreError !== null ? <ErrorBanner message={restoreError} /> : null}
 
         {result === null ? (
           <View className="items-center gap-3 rounded-2xl bg-card px-5 py-10">
@@ -151,7 +201,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
               <Pressable
                 accessibilityRole="button"
                 className="min-h-11 justify-center rounded-xl bg-subtle px-4 active:opacity-60"
-                onPress={query.refresh}
+                onPress={refresh}
               >
                 <Text className="font-t3-medium text-foreground">Try again</Text>
               </Pressable>
@@ -181,6 +231,35 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
               <Text className="text-xs text-foreground-muted">
                 Checked by the server {formatDate(result.checkedAt)}
               </Text>
+              {canRestore && result.undoTitle != null ? (
+                <View className="mt-1 gap-2 rounded-xl bg-subtle px-3 py-3">
+                  <Text className="text-sm text-foreground-secondary">
+                    Restore “<Text className="font-t3-medium">{result.undoTitle}</Text>”
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    className="min-h-11 flex-row items-center justify-center gap-2 rounded-xl bg-card px-4 active:opacity-60 disabled:opacity-40"
+                    disabled={restoringTarget !== null || query.isPending}
+                    onPress={() => void restoreTitle("undo", result.undoTitle!)}
+                  >
+                    {restoringTarget === "undo" ? (
+                      <ActivityIndicator colorClassName="accent-icon-muted" size="small" />
+                    ) : (
+                      <SymbolView
+                        name="arrow.uturn.backward"
+                        size={17}
+                        tintColorClassName="accent-icon-muted"
+                        type="monochrome"
+                      />
+                    )}
+                    <Text className="font-t3-medium text-foreground">Undo rename</Text>
+                  </Pressable>
+                  <Text className="text-xs leading-4 text-foreground-muted">
+                    Restoring makes the title manual, protecting it from automatic changes. Use
+                    Regenerate title in the thread menu to resume automatic updates.
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             <View className="overflow-hidden rounded-2xl bg-card">
@@ -215,6 +294,12 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
               <Text className="px-1 text-xs font-t3-bold uppercase tracking-[1px] text-foreground-muted">
                 History
               </Text>
+              {hasRestorableHistoryTitle ? (
+                <Text className="px-1 text-xs leading-4 text-foreground-muted">
+                  Restoring makes a title manual, protecting it from automatic changes. Use
+                  Regenerate title in the thread menu to resume automatic updates.
+                </Text>
+              ) : null}
               {result.history.length === 0 ? (
                 <View className="rounded-2xl bg-card px-4 py-5">
                   <Text className="text-sm text-foreground-muted">No title updates recorded.</Text>
@@ -233,7 +318,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                           {entry.title}
                         </Text>
                         <Text className="text-xs text-foreground-muted">
-                          {SOURCE_LABELS[entry.source]}
+                          {entry.isRestoration === true ? "Restored" : SOURCE_LABELS[entry.source]}
                         </Text>
                       </View>
                       {entry.previousTitle !== null ? (
@@ -244,6 +329,21 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                       <Text className="text-xs text-foreground-tertiary">
                         {formatDate(entry.at)}
                       </Text>
+                      {canRestore && entry.title !== result.currentTitle ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          className="mt-1 min-h-11 flex-row items-center justify-center gap-2 self-start rounded-xl bg-subtle px-3 active:opacity-60 disabled:opacity-40"
+                          disabled={restoringTarget !== null || query.isPending}
+                          onPress={() => void restoreTitle(entry.id, entry.title)}
+                        >
+                          {restoringTarget === entry.id ? (
+                            <ActivityIndicator colorClassName="accent-icon-muted" size="small" />
+                          ) : null}
+                          <Text className="text-sm font-t3-medium text-foreground">
+                            Restore this title
+                          </Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   ))}
                 </View>

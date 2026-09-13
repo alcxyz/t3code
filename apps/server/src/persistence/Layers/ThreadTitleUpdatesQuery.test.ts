@@ -19,6 +19,7 @@ const insertThread = Effect.fn("insertTitleUpdatesThread")(function* (input: {
   readonly threadId: ThreadId;
   readonly title: string;
   readonly createdAt?: string;
+  readonly titleState?: unknown;
 }) {
   const createdAt = input.createdAt ?? "2026-09-01T00:00:00.000Z";
   const sql = yield* SqlClient.SqlClient;
@@ -27,6 +28,7 @@ const insertThread = Effect.fn("insertTitleUpdatesThread")(function* (input: {
       thread_id,
       project_id,
       title,
+      title_state_json,
       model_selection_json,
       created_at,
       updated_at
@@ -34,6 +36,7 @@ const insertThread = Effect.fn("insertTitleUpdatesThread")(function* (input: {
       ${input.threadId},
       'title-updates-project',
       ${input.title},
+      ${input.titleState === undefined ? null : encodePayload(input.titleState)},
       '{"provider":"codex","model":"gpt-5.4"}',
       ${createdAt},
       ${createdAt}
@@ -90,7 +93,15 @@ tests("ThreadTitleUpdatesQuery", (it) => {
   it.effect("classifies native, refinement, explicit, automatic, and ambiguous title changes", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("history-sources");
-      yield* insertThread({ threadId, title: "Automatic title" });
+      yield* insertThread({
+        threadId,
+        title: "Restored title",
+        titleState: {
+          source: "manual",
+          version: "restore-title",
+          needsRefinement: false,
+        },
+      });
       yield* insertEvent({
         id: "created",
         threadId,
@@ -192,9 +203,29 @@ tests("ThreadTitleUpdatesQuery", (it) => {
           titleState: { source: "manual", version: "manual-same-title" },
         },
       });
+      yield* insertEvent({
+        id: "restoration",
+        threadId,
+        at: "2026-09-01T00:10:00.000Z",
+        commandId: "restore-title",
+        actorKind: "client",
+        payload: {
+          threadId,
+          title: "Restored title",
+          titleRestoration: true,
+          titleState: { source: "manual", version: "restore-title" },
+        },
+      });
 
       const result = yield* (yield* ThreadTitleUpdatesQuery).get(threadId);
+      expect(Option.getOrThrow(result).titleVersion).toBe("restore-title");
       expect(Option.getOrThrow(result).history).toEqual([
+        expect.objectContaining({
+          id: "restoration",
+          version: "restore-title",
+          source: "manual",
+          isRestoration: true,
+        }),
         expect.objectContaining({ id: "automatic", source: "automatic" }),
         expect.objectContaining({ id: "ambiguous", source: "unknown" }),
         expect.objectContaining({ id: "regeneration", source: "regeneration" }),

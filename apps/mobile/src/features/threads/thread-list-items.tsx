@@ -28,8 +28,9 @@ import type { HomeGroupDisplayAction } from "../home/homeListItems";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import { QueuedMessageIcon } from "./queued-message-icon";
-import { resolveThreadStatus } from "./threadPresentation";
+import { isThreadTitleRenameActive, resolveThreadStatus } from "./threadPresentation";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
+import { ThreadTitleUpdateIndicator } from "./thread-title-update-indicator";
 
 /**
  * Shared presentation for the thread lists: the compact (phone) Home list and
@@ -492,6 +493,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
     onNewThreadOnBranch,
   } = props;
   const status = resolveThreadStatus(thread);
+  const titleRenameActive = props.titleUpdatesSupported && isThreadTitleRenameActive(thread);
   const pr = useThreadPr(thread);
   const timestamp = relativeTime(
     thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
@@ -535,6 +537,10 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
+  );
+  const handleOpenTitleUpdates = useCallback(
+    () => onOpenTitleUpdates(thread),
+    [onOpenTitleUpdates, thread],
   );
   const menuActions = useMemo<MenuAction[]>(
     () => [
@@ -698,6 +704,19 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
               >
                 {thread.title}
               </Text>
+              {titleRenameActive ? (
+                <ThreadTitleUpdateIndicator
+                  compact={compact}
+                  onPress={handleOpenTitleUpdates}
+                  tintColorClassName={
+                    visuallySelected
+                      ? materialYouStyleLayoutActive
+                        ? "accent-thread-selected-foreground"
+                        : "accent-user-bubble-foreground"
+                      : "accent-icon-subtle"
+                  }
+                />
+              ) : null}
               <View className="flex-row items-center gap-2">
                 {props.hasQueuedMessages ? (
                   <QueuedMessageIcon selected={visuallySelected && !materialYouStyleLayoutActive} />
@@ -776,6 +795,19 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
             >
               {thread.title}
             </Text>
+            {titleRenameActive ? (
+              <ThreadTitleUpdateIndicator
+                compact={compact}
+                onPress={handleOpenTitleUpdates}
+                tintColorClassName={
+                  visuallySelected
+                    ? materialYouStyleLayoutActive
+                      ? "accent-thread-selected-foreground"
+                      : "accent-user-bubble-foreground"
+                    : "accent-icon-subtle"
+                }
+              />
+            ) : null}
             <View className="flex-row items-center gap-2">
               {props.hasQueuedMessages ? (
                 <QueuedMessageIcon selected={visuallySelected && !materialYouStyleLayoutActive} />

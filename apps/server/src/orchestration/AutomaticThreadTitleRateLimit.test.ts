@@ -397,7 +397,7 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
     }),
   );
 
-  it.effect("ignores repeated idempotent agent requests for cooldown and rolling quota", () =>
+  it.effect("ignores title restorations and idempotent requests for rename quota", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("idempotent-requests");
       yield* insertThread({
@@ -419,6 +419,22 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
         eventId: "idempotent-success",
         threadId,
         occurredAt: "2026-09-12T10:00:00.000Z",
+      });
+      yield* insertEvent({
+        eventId: "restored-title",
+        threadId,
+        occurredAt: "2026-09-12T10:05:00.000Z",
+        commandId: "restore-title",
+        payload: {
+          threadId,
+          title: "Earlier title",
+          titleRestoration: true,
+          titleState: {
+            source: "manual",
+            version: "restore-title",
+            needsRefinement: false,
+          },
+        },
       });
       yield* Effect.forEach(
         ["11:00:00.000", "11:15:00.000", "11:30:00.000"],

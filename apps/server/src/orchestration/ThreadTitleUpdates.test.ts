@@ -19,6 +19,7 @@ const checkedAt = "2026-09-12T12:00:00.000Z";
 const baseThread: ThreadTitleUpdatesRecord = {
   title: "Generated title",
   titleSource: "generated",
+  titleVersion: null,
   archivedAt: null,
   deletedAt: null,
   settledOverride: null,
@@ -92,6 +93,36 @@ it.effect("reports every runtime gate before quota eligibility", () =>
       const result = yield* readTitleUpdates(testCase.input);
       expect(result.status).toBe(testCase.expected);
       expect(result.status === "eligible").toBe(testCase.expected === "eligible");
+    }
+  }),
+);
+
+it.effect("offers undo only while the latest automatic rename still owns the title", () =>
+  Effect.gen(function* () {
+    const automaticVersion = "agent-thread-title:latest";
+    const history = [
+      {
+        id: "event-latest",
+        at: checkedAt,
+        previousTitle: "Previous title",
+        title: "Generated title",
+        version: automaticVersion,
+        isRestoration: false,
+        source: "automatic" as const,
+      },
+    ];
+    const current = yield* readTitleUpdates({
+      thread: { titleVersion: automaticVersion, history },
+    });
+    expect(current.currentVersion).toBe(automaticVersion);
+    expect(current.undoTitle).toBe("Previous title");
+
+    for (const thread of [
+      { titleVersion: "manual-same-title", history },
+      { titleVersion: automaticVersion, titleSource: "manual" as const, history },
+      { titleVersion: automaticVersion, titleRegenerationRequestId: "pending", history },
+    ]) {
+      expect((yield* readTitleUpdates({ thread })).undoTitle).toBeNull();
     }
   }),
 );

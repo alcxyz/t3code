@@ -1,4 +1,4 @@
-import type { OrchestrationGetTitleUpdatesResult, ThreadId } from "@t3tools/contracts";
+import type { CommandId, OrchestrationGetTitleUpdatesResult, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
@@ -8,6 +8,7 @@ import type { PersistenceSqlError } from "../Errors.ts";
 export interface ThreadTitleUpdatesRecord {
   readonly title: string;
   readonly titleSource: "generated" | "manual" | null;
+  readonly titleVersion: CommandId | null;
   readonly archivedAt: string | null;
   readonly deletedAt: string | null;
   readonly settledOverride: "settled" | "active" | null;

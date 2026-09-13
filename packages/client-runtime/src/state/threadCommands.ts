@@ -29,6 +29,7 @@ import {
   type UnpinThreadInput,
   type UnsettleThreadInput,
   type UnsnoozeThreadInput,
+  type RestoreThreadTitleInput,
   type UpdateThreadMetadataInput,
   archiveThread,
   createThread,
@@ -51,6 +52,7 @@ import {
   unpinThread,
   unsettleThread,
   unsnoozeThread,
+  restoreThreadTitle,
   updateThreadMetadata,
 } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -77,6 +79,7 @@ export type {
   UnpinThreadInput,
   UnsettleThreadInput,
   UnsnoozeThreadInput,
+  RestoreThreadTitleInput,
   UpdateThreadMetadataInput,
 } from "../operations/commands.ts";
 
@@ -165,6 +168,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     updateMetadata: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:update-metadata",
       execute: (input: UpdateThreadMetadataInput) => updateThreadMetadata(input),
+      scheduler,
+      concurrency,
+    }),
+    restoreTitle: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:restore-title",
+      execute: (input: RestoreThreadTitleInput) => restoreThreadTitle(input),
       scheduler,
       concurrency,
     }),

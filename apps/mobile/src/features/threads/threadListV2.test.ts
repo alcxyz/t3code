@@ -33,6 +33,7 @@ import {
   resolveThreadListV2SwipeActions,
   sortThreadsForListV2,
 } from "./threadListV2";
+import { isThreadTitleRenameActive, resolveThreadStatus } from "./threadPresentation";
 
 const environmentId = EnvironmentId.make("environment-1");
 
@@ -165,6 +166,42 @@ describe("resolveThreadListV2Status", () => {
     expect(resolveThreadListV2Status(makeThread({ id: ThreadId.make("t"), title: "t" }))).toBe(
       "ready",
     );
+  });
+
+  it("keeps an automatic rename secondary to the primary working status", () => {
+    const thread = makeThread({
+      id: ThreadId.make("renamed-running"),
+      title: "Renamed",
+      titleAutoRenamedAt: "2026-06-02T00:01:00.000Z",
+      latestUserMessageAt: "2026-06-02T00:00:30.000Z",
+      session: {
+        threadId: ThreadId.make("renamed-running"),
+        status: "running",
+        providerName: "Codex",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: NOW,
+      },
+    });
+
+    expect(isThreadTitleRenameActive(thread)).toBe(true);
+    expect(resolveThreadListV2Status(thread)).toBe("working");
+    expect(resolveThreadStatus(thread)?.kind).toBe("working");
+  });
+
+  it("clears the secondary rename indicator after a newer user message", () => {
+    expect(
+      isThreadTitleRenameActive(
+        makeThread({
+          id: ThreadId.make("renamed-stale"),
+          title: "Renamed",
+          titleAutoRenamedAt: "2026-06-02T00:01:00.000Z",
+          latestUserMessageAt: "2026-06-02T00:02:00.000Z",
+        }),
+      ),
+    ).toBe(false);
   });
 });
 

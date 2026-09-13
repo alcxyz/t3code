@@ -937,6 +937,46 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.title.restore": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (
+        thread.deletedAt !== null ||
+        thread.titleRegeneration != null ||
+        (thread.titleState?.version ?? null) !== command.expectedVersion
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} changed before its title could be restored`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.meta-updated",
+        payload: {
+          threadId: command.threadId,
+          title: command.title,
+          titleRestoration: true as const,
+          titleAutoRenamedAt: null,
+          titleState: {
+            source: "manual" as const,
+            version: command.commandId,
+            needsRefinement: false,
+          },
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
     case "thread.pull-request.sync": {
       const thread = yield* requireThreadNotArchived({
         readModel,

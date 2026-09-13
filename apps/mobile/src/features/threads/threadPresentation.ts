@@ -8,8 +8,7 @@ export type ThreadStatusKind =
   | "working"
   | "connecting"
   | "error"
-  | "plan-ready"
-  | "renamed";
+  | "plan-ready";
 
 export interface ThreadStatusPresentation extends StatusTone {
   readonly kind: ThreadStatusKind;
@@ -29,6 +28,23 @@ function isLatestTurnSettled(
   if (!latestTurn.completedAt) return false;
   if (!session) return true;
   return session.status !== "running";
+}
+
+/**
+ * Automatic title updates stay visible until the user sends another message.
+ * This is deliberately independent from the primary thread status so a
+ * rename can be shown alongside working, approval, and other states.
+ */
+export function isThreadTitleRenameActive(
+  thread: Pick<EnvironmentThreadShell, "titleAutoRenamedAt" | "latestUserMessageAt">,
+): boolean {
+  const renamedAt = Date.parse(thread.titleAutoRenamedAt ?? "");
+  const latestUserMessageAt = Date.parse(thread.latestUserMessageAt ?? "");
+  return (
+    Number.isFinite(renamedAt) &&
+    (thread.latestUserMessageAt === null ||
+      (Number.isFinite(latestUserMessageAt) && renamedAt > latestUserMessageAt))
+  );
 }
 
 /**
@@ -111,24 +127,6 @@ export function resolveThreadStatus(
       textClassName: "text-foreground-secondary",
       iconColor: "#bf5af2",
       iconBackground: "rgba(191,90,242,0.22)",
-      pulse: false,
-    };
-  }
-
-  const renamedAt = Date.parse(thread.titleAutoRenamedAt ?? "");
-  const latestUserMessageAt = Date.parse(thread.latestUserMessageAt ?? "");
-  if (
-    Number.isFinite(renamedAt) &&
-    (thread.latestUserMessageAt === null ||
-      (Number.isFinite(latestUserMessageAt) && renamedAt > latestUserMessageAt))
-  ) {
-    return {
-      kind: "renamed",
-      label: "Renamed",
-      pillClassName: "bg-warning",
-      textClassName: "text-warning-foreground",
-      iconColor: "#ff9f0a",
-      iconBackground: "rgba(255,159,10,0.22)",
       pulse: false,
     };
   }

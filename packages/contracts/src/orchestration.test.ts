@@ -966,6 +966,23 @@ it.effect("accepts a title regeneration intent in thread.meta.update", () =>
   }),
 );
 
+it.effect("accepts a guarded thread title restoration", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeClientOrchestrationCommand({
+      type: "thread.title.restore",
+      commandId: "cmd-title-restore",
+      threadId: "thread-1",
+      title: "Earlier title",
+      expectedVersion: "agent-thread-title:latest",
+    });
+    assert.strictEqual(parsed.type, "thread.title.restore");
+    if (parsed.type === "thread.title.restore") {
+      assert.strictEqual(parsed.title, "Earlier title");
+      assert.strictEqual(parsed.expectedVersion, "agent-thread-title:latest");
+    }
+  }),
+);
+
 it.effect("accepts a linked pull request in thread.meta.update", () =>
   Effect.gen(function* () {
     const linkedPullRequest = {

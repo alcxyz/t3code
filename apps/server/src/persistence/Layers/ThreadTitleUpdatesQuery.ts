@@ -1,8 +1,14 @@
-import { IsoDateTime, OrchestrationGetTitleUpdatesResult, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  IsoDateTime,
+  OrchestrationGetTitleUpdatesResult,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
@@ -17,6 +23,7 @@ const HISTORY_LIMIT = 50;
 const ThreadTitleUpdatesRow = Schema.Struct({
   title: Schema.String,
   titleSource: Schema.NullOr(Schema.Literals(["generated", "manual"])),
+  titleVersion: Schema.NullOr(CommandId),
   archivedAt: Schema.NullOr(IsoDateTime),
   deletedAt: Schema.NullOr(IsoDateTime),
   settledOverride: Schema.NullOr(Schema.Literals(["settled", "active"])),
@@ -24,7 +31,9 @@ const ThreadTitleUpdatesRow = Schema.Struct({
   titleRegenerationRequestId: Schema.NullOr(Schema.String),
 });
 
-const HistoryRow = OrchestrationGetTitleUpdatesResult.fields.history.value;
+const HistoryRow = OrchestrationGetTitleUpdatesResult.fields.history.value.mapFields(
+  Struct.assign({ isRestoration: Schema.Number }),
+);
 
 const makeThreadTitleUpdatesQuery = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -36,6 +45,7 @@ const makeThreadTitleUpdatesQuery = Effect.gen(function* () {
       SELECT
         title,
         json_extract(title_state_json, '$.source') AS "titleSource",
+        json_extract(title_state_json, '$.version') AS "titleVersion",
         archived_at AS "archivedAt",
         deleted_at AS "deletedAt",
         settled_override AS "settledOverride",
@@ -98,6 +108,11 @@ const makeThreadTitleUpdatesQuery = Effect.gen(function* () {
         changed.occurred_at AS at,
         changed.previous_title AS "previousTitle",
         changed.title,
+        changed.command_id AS version,
+        CASE
+          WHEN json_extract(changed.payload_json, '$.titleRestoration') = 1 THEN TRUE
+          ELSE FALSE
+        END AS "isRestoration",
         CASE
           WHEN changed.command_id LIKE 'agent-thread-title:%'
             AND (
@@ -163,7 +178,10 @@ const makeThreadTitleUpdatesQuery = Effect.gen(function* () {
       );
       return Option.some({
         ...thread.value,
-        history: rows.slice(0, HISTORY_LIMIT),
+        history: rows.slice(0, HISTORY_LIMIT).map((row) => ({
+          ...row,
+          isRestoration: row.isRestoration === 1,
+        })),
         hasMore: rows.length > HISTORY_LIMIT,
       });
     },

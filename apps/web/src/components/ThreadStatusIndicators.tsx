@@ -6,7 +6,7 @@ import {
   type ThreadLinkedPullRequest,
   type VcsStatusResult,
 } from "@t3tools/contracts";
-import { FolderGit2Icon, TerminalIcon } from "lucide-react";
+import { FolderGit2Icon, SparklesIcon, TerminalIcon } from "lucide-react";
 import { useMemo, type MouseEvent } from "react";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
@@ -15,7 +15,11 @@ import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../sta
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveChangeRequestPresentation } from "../sourceControlPresentation";
-import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic";
+import {
+  hasActiveAutomaticRename,
+  resolveThreadStatusPill,
+  type ThreadStatusPill,
+} from "./Sidebar.logic";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
@@ -222,34 +226,19 @@ export function ThreadWorktreeIndicator({
 export function ThreadStatusLabel({
   status,
   compact = false,
-  onClick,
 }: {
   status: ThreadStatusPill;
   compact?: boolean;
-  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   if (compact) {
     return (
       <Tooltip>
         <TooltipTrigger
           render={
-            onClick ? (
-              <button
-                type="button"
-                aria-label="View title updates"
-                className={`inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:ring-ring ${status.colorClass}`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") event.stopPropagation();
-                }}
-                onClick={onClick}
-              />
-            ) : (
-              <span
-                aria-label={status.label}
-                className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
-              />
-            )
+            <span
+              aria-label={status.label}
+              className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
+            />
           }
         >
           <span
@@ -259,31 +248,6 @@ export function ThreadStatusLabel({
           />
         </TooltipTrigger>
         <TooltipPopup side="top">{status.label}</TooltipPopup>
-      </Tooltip>
-    );
-  }
-
-  if (onClick) {
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              aria-label="View title updates"
-              className={`inline-flex cursor-pointer items-center gap-1 rounded-sm text-[10px] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring ${status.colorClass}`}
-              onPointerDown={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
-              }}
-              onClick={onClick}
-            />
-          }
-        >
-          <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
-          <span className="hidden md:inline">{status.label}</span>
-        </TooltipTrigger>
-        <TooltipPopup side="top">View title updates</TooltipPopup>
       </Tooltip>
     );
   }
@@ -306,6 +270,49 @@ export function ThreadStatusLabel({
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">{status.label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+export function ThreadRenameIndicator({
+  thread,
+  onClick,
+}: {
+  thread: Pick<SidebarThreadSummary, "titleAutoRenamedAt" | "latestUserMessageAt">;
+  onClick?: ((event: MouseEvent<HTMLButtonElement>) => void) | undefined;
+}) {
+  if (!hasActiveAutomaticRename(thread)) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          onClick ? (
+            <button
+              type="button"
+              aria-label="Title renamed automatically. View title updates"
+              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onPointerDown={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+              }}
+              onClick={onClick}
+            />
+          ) : (
+            <span
+              aria-label="Title renamed automatically"
+              className="inline-flex size-5 shrink-0 items-center justify-center text-muted-foreground"
+            />
+          )
+        }
+      >
+        <SparklesIcon aria-hidden className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">
+        {onClick
+          ? "Title renamed automatically · View title updates"
+          : "Title renamed automatically"}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -333,7 +340,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
     },
   });
 
-  if (!prStatus && !threadStatus) {
+  if (!prStatus && !threadStatus && !hasActiveAutomaticRename(thread)) {
     return null;
   }
 
@@ -357,6 +364,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
         </Tooltip>
       ) : null}
       {threadStatus ? <ThreadStatusLabel status={threadStatus} /> : null}
+      <ThreadRenameIndicator thread={thread} />
     </span>
   );
 }

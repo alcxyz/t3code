@@ -1063,6 +1063,14 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   ),
 );
 
+const ThreadTitleRestoreCommand = Schema.Struct({
+  type: Schema.Literal("thread.title.restore"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  title: TrimmedNonEmptyString,
+  expectedVersion: Schema.NullOr(CommandId),
+});
+
 const ThreadRuntimeModeSetCommand = Schema.Struct({
   type: Schema.Literal("thread.runtime-mode.set"),
   commandId: CommandId,
@@ -1221,6 +1229,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadPinReorderCommand,
   ThreadActiveReorderCommand,
   ThreadMetaUpdateCommand,
+  ThreadTitleRestoreCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadTurnStartCommand,
@@ -1251,6 +1260,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadPinReorderCommand,
   ThreadActiveReorderCommand,
   ThreadMetaUpdateCommand,
+  ThreadTitleRestoreCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ClientThreadTurnStartCommand,
@@ -1572,6 +1582,8 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   // new field while continuing to decode the event stream.
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   title: Schema.optional(TrimmedNonEmptyString),
+  /** Marks a guarded user restoration while retaining manual title ownership. */
+  titleRestoration: Schema.optional(Schema.Literal(true)),
   titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   /** Intent marker consumed by the title-generation reactor. Keeping this on
       the existing event lets older clients safely ignore the new field. */
@@ -2054,6 +2066,10 @@ export const OrchestrationGetTitleUpdatesResult = Schema.Struct({
   threadId: ThreadId,
   checkedAt: IsoDateTime,
   currentTitle: TrimmedNonEmptyString,
+  /** Missing when decoded from a server predating guarded title restoration. */
+  currentVersion: Schema.optional(Schema.NullOr(CommandId)),
+  /** Previous title when the current ownership is the latest automatic rename. */
+  undoTitle: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   profile: Schema.Literals(["rare", "balanced", "often", "custom"]),
   status: Schema.Literals([
     "disabled",
@@ -2080,6 +2096,8 @@ export const OrchestrationGetTitleUpdatesResult = Schema.Struct({
       at: IsoDateTime,
       previousTitle: Schema.NullOr(TrimmedNonEmptyString),
       title: TrimmedNonEmptyString,
+      version: Schema.optional(Schema.NullOr(CommandId)),
+      isRestoration: Schema.optional(Schema.Boolean),
       source: Schema.Literals([
         "initial",
         "refinement",
