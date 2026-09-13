@@ -53,14 +53,18 @@ describe("buildThreadActionMenuItems", () => {
   });
 
   it("groups project settings with utility actions before archive", () => {
-    const items = buildThreadActionMenuItems(baseState);
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      supports: { ...baseState.supports, titleUpdates: true },
+    });
     const copyIndex = items.findIndex((item) => item.id === "copy");
-    expect(items[copyIndex + 1]).toMatchObject({
+    expect(items[copyIndex + 1]).toMatchObject({ id: "title-updates" });
+    expect(items[copyIndex + 2]).toMatchObject({
       id: "project-settings",
       label: "Project settings",
       icon: "settings",
     });
-    expect(items[copyIndex + 2]?.id).toBe("archive");
+    expect(items[copyIndex + 3]?.id).toBe("archive");
   });
 
   it("includes branch items only for threads with a branch", () => {

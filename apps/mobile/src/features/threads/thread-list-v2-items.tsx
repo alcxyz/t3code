@@ -595,8 +595,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         subactions: snoozePresetActions,
       },
       ...arrangementMenuItems,
-      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
+      ...titleUpdatesMenuItems,
       { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
     ],
     [arrangementMenuItems, snoozePresetActions, titleRegenerationMenuItems, titleUpdatesMenuItems],
@@ -605,8 +605,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     () => [
       CARD_MENU_ACTIONS[0]!,
       ...arrangementMenuItems,
-      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
+      ...titleUpdatesMenuItems,
       ...CARD_MENU_ACTIONS.slice(1),
     ],
     [arrangementMenuItems, titleRegenerationMenuItems, titleUpdatesMenuItems],
@@ -617,8 +617,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ...arrangementMenuItems.filter(
         (action) => action.id !== "move-up" && action.id !== "move-down",
       ),
-      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
+      ...titleUpdatesMenuItems,
       SLIM_MENU_ACTIONS[1]!,
     ],
     [arrangementMenuItems, titleRegenerationMenuItems, titleUpdatesMenuItems],
@@ -626,8 +626,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const snoozedMenuActions = useMemo<MenuAction[]>(
     () => [
       SNOOZED_MENU_ACTIONS[0]!,
-      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
+      ...titleUpdatesMenuItems,
       SNOOZED_MENU_ACTIONS[1]!,
     ],
     [titleRegenerationMenuItems, titleUpdatesMenuItems],
@@ -636,8 +636,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     () => [
       LEGACY_MENU_ACTIONS[0]!,
       ...arrangementMenuItems,
-      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
+      ...titleUpdatesMenuItems,
       LEGACY_MENU_ACTIONS[1]!,
     ],
     [arrangementMenuItems, titleRegenerationMenuItems, titleUpdatesMenuItems],

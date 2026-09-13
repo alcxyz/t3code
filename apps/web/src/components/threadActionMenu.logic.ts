@@ -99,9 +99,6 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
-    ...(state.supports.titleUpdates
-      ? [{ id: "title-updates" as const, label: "Title updates", icon: "sparkles" }]
-      : []),
     ...(state.supports.titleRegeneration
       ? [
           {
@@ -126,6 +123,9 @@ export function buildThreadActionMenuItems(
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },
+    ...(state.supports.titleUpdates
+      ? [{ id: "title-updates" as const, label: "Title updates", icon: "sparkles" }]
+      : []),
     { id: "project-settings", label: "Project settings", icon: "settings" },
     // Archive removes the thread from the sidebar while keeping its
     // conversation under Settings > Archived threads — distinct from Settle

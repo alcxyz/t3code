@@ -555,13 +555,13 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           ]
         : []),
       THREAD_ROW_MENU_ACTIONS[0]!,
-      ...(props.titleUpdatesSupported
-        ? [{ id: "title-updates", title: "Title updates…", image: "textformat" }]
-        : []),
       ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
       }),
+      ...(props.titleUpdatesSupported
+        ? [{ id: "title-updates", title: "Title updates…", image: "textformat" }]
+        : []),
       THREAD_ROW_MENU_ACTIONS[1]!,
     ],
     [

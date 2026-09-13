@@ -6,7 +6,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -17,9 +17,10 @@ import {
 } from "react-native";
 
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { SymbolView } from "../../components/AppSymbol";
+import { useThreadShell } from "../../state/entities";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentServerConfigsAtom } from "../../state/server";
@@ -108,6 +109,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
   const navigation = useNavigation();
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const threadId = ThreadId.make(props.route.params.threadId);
+  const thread = useThreadShell({ environmentId, threadId });
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const supported =
     serverConfigs.get(environmentId)?.environment.capabilities.threadTitleUpdates === true;
@@ -118,13 +120,71 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
       ? orchestrationEnvironment.titleUpdates({ environmentId, input: { threadId } })
       : null,
   );
+  const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [titleAction, setTitleAction] = useState<"rename" | "regenerate" | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const regenerationSupported =
+    serverConfigs.get(environmentId)?.environment.capabilities.threadTitleRegeneration === true;
+  const regenerating = thread?.titleRegeneration != null || titleAction === "regenerate";
+  const titleStamp = JSON.stringify([
+    environmentId,
+    threadId,
+    thread?.title,
+    thread?.titleState?.version,
+    thread?.titleRegeneration?.requestId,
+  ]);
+  const lastTitleStamp = useRef(titleStamp);
+  const refreshQuery = query.refresh;
+  useEffect(() => {
+    if (lastTitleStamp.current === titleStamp) return;
+    lastTitleStamp.current = titleStamp;
+    if (supported) refreshQuery();
+  }, [titleStamp, supported, refreshQuery]);
   const restoreThreadTitle = useAtomCommand(threadEnvironment.restoreTitle, {
     reportFailure: false,
   });
   const [restoringTarget, setRestoringTarget] = useState<string | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const result = query.data;
+  const titleBusy = titleAction !== null || restoringTarget !== null || regenerating;
+  const currentTitle = thread?.title ?? result?.currentTitle ?? "";
+  const canManageTitle = supported && thread !== null && result?.status !== "deleted";
+  const changeTitle = async (action: "rename" | "regenerate") => {
+    const title = draftTitle.trim();
+    if (
+      !canManageTitle ||
+      titleBusy ||
+      (action === "rename" && !title) ||
+      (action === "regenerate" && !regenerationSupported)
+    )
+      return;
+    if (action === "rename" && title === currentTitle) {
+      setEditingTitle(false);
+      return;
+    }
+    setTitleAction(action);
+    setTitleError(null);
+    const response = await updateMetadata({
+      environmentId,
+      input: { threadId, ...(action === "rename" ? { title } : { regenerateTitle: true }) },
+    });
+    if (response._tag === "Failure") {
+      if (!isAtomCommandInterrupted(response)) {
+        const error = squashAtomCommandFailure(response);
+        setTitleError(error instanceof Error ? error.message : "The title could not be updated.");
+      }
+    } else {
+      setEditingTitle(false);
+    }
+    setTitleAction(null);
+    refreshQuery();
+  };
   const canRestore =
+    !regenerating &&
+    titleAction === null &&
+    !editingTitle &&
     restorationSupported &&
     result !== null &&
     result.currentVersion !== undefined &&
@@ -174,6 +234,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
       ) : null}
 
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerClassName="gap-5 px-4 pb-10 pt-4"
         refreshControl={
           <RefreshControl refreshing={query.isPending && result !== null} onRefresh={refresh} />
@@ -216,7 +277,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                     Current title
                   </Text>
                   <Text className="text-xl font-t3-bold text-foreground" selectable>
-                    {result.currentTitle}
+                    {currentTitle}
                   </Text>
                 </View>
                 <View className="rounded-full bg-subtle px-2.5 py-1">
@@ -225,6 +286,86 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                   </Text>
                 </View>
               </View>
+              {titleError ? <ErrorBanner message={titleError} /> : null}
+              {canManageTitle ? (
+                editingTitle ? (
+                  <View className="gap-2">
+                    <TextInput
+                      accessibilityLabel="Thread title"
+                      autoFocus
+                      value={draftTitle}
+                      onChangeText={setDraftTitle}
+                      editable={!titleBusy}
+                      onSubmitEditing={() => void changeTitle("rename")}
+                      returnKeyType="done"
+                      className="min-h-11 rounded-xl border border-border-subtle bg-subtle px-3 text-foreground"
+                    />
+                    <View className="flex-row gap-2">
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={titleBusy || !draftTitle.trim()}
+                        onPress={() => void changeTitle("rename")}
+                        className="min-h-11 justify-center rounded-xl bg-subtle px-4 disabled:opacity-40"
+                      >
+                        <Text className="font-t3-medium text-foreground">
+                          {titleAction === "rename" ? "Saving…" : "Save"}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={titleBusy}
+                        onPress={() => setEditingTitle(false)}
+                        className="min-h-11 justify-center rounded-xl px-4 disabled:opacity-40"
+                      >
+                        <Text className="text-foreground">Cancel</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <View className="flex-row flex-wrap gap-2">
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={titleBusy}
+                      onPress={() => {
+                        setDraftTitle(currentTitle);
+                        setTitleError(null);
+                        setEditingTitle(true);
+                      }}
+                      className="min-h-11 flex-row items-center gap-2 rounded-xl bg-subtle px-3 disabled:opacity-40"
+                    >
+                      <SymbolView
+                        name="pencil"
+                        size={16}
+                        tintColorClassName="accent-icon-muted"
+                        type="monochrome"
+                      />
+                      <Text className="font-t3-medium text-foreground">Rename thread</Text>
+                    </Pressable>
+                    {regenerationSupported ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={titleBusy}
+                        onPress={() => void changeTitle("regenerate")}
+                        className="min-h-11 flex-row items-center gap-2 rounded-xl bg-subtle px-3 disabled:opacity-40"
+                      >
+                        {regenerating ? (
+                          <ActivityIndicator colorClassName="accent-icon-muted" size="small" />
+                        ) : (
+                          <SymbolView
+                            name="arrow.clockwise"
+                            size={16}
+                            tintColorClassName="accent-icon-muted"
+                            type="monochrome"
+                          />
+                        )}
+                        <Text className="font-t3-medium text-foreground">
+                          {regenerating ? "Regenerating…" : "Regenerate title"}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                )
+              ) : null}
               <Text className="text-sm leading-5 text-foreground-secondary">
                 {eligibilityMessage(result)}
               </Text>
@@ -256,7 +397,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                   </Pressable>
                   <Text className="text-xs leading-4 text-foreground-muted">
                     Restoring makes the title manual, protecting it from automatic changes. Use
-                    Regenerate title in the thread menu to resume automatic updates.
+                    Regenerate title to resume automatic updates.
                   </Text>
                 </View>
               ) : null}
@@ -297,7 +438,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
               {hasRestorableHistoryTitle ? (
                 <Text className="px-1 text-xs leading-4 text-foreground-muted">
                   Restoring makes a title manual, protecting it from automatic changes. Use
-                  Regenerate title in the thread menu to resume automatic updates.
+                  Regenerate title to resume automatic updates.
                 </Text>
               ) : null}
               {result.history.length === 0 ? (

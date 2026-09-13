@@ -114,7 +114,8 @@ check again after more activity. The panel requires a supporting server.
 
 Restoring a title from **Title updates** protects it from automatic changes. **Undo rename**
 restores the title before the latest automatic update; older entries offer **Restore this title**.
-Choose **Regenerate title** from the thread menu to resume automatic title updates.
+Use **Rename thread** or **Regenerate title** directly in **Title updates** to choose a name
+or generate a fresh one. Regeneration resumes automatic title updates for protected titles.
 
 ## Settle finished work
 

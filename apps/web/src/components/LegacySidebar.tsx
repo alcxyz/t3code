@@ -2227,13 +2227,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           ...(thread.branch
             ? [{ id: "new-thread-on-branch", label: `New thread on ${thread.branch}` }]
             : []),
-          ...(readEnvironmentSupportsTitleUpdates(thread.environmentId)
-            ? [{ id: "title-updates", label: "Title updates", icon: "sparkles" }]
-            : []),
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
+          ...(readEnvironmentSupportsTitleUpdates(thread.environmentId)
+            ? [{ id: "title-updates", label: "Title updates", icon: "sparkles" }]
+            : []),
           { id: "project-settings", label: "Project settings" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
         ],
