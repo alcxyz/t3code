@@ -1,3 +1,4 @@
+import { getThreadTitleUpdates } from "./orchestration/ThreadTitleUpdates.ts";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -1374,6 +1375,20 @@ const makeWsRpcLayer = (
                       message: "Failed to dispatch orchestration command",
                       cause,
                     }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getTitleUpdates]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getTitleUpdates,
+            getThreadTitleUpdates(input.threadId).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: "Could not load thread title updates",
+                    cause,
+                  }),
               ),
             ),
             { "rpc.aggregate": "orchestration" },

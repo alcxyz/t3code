@@ -106,6 +106,12 @@ explicit regeneration, and the initial title do not count toward the automatic r
 If an older server writes the environment's settings, turn this option on again after returning to
 a server version that supports it. Older servers discard settings they do not recognize.
 
+Choose **Title updates** from a thread's menu to inspect its current eligibility and recent
+name changes. The panel explains waiting periods and protected titles, and distinguishes native
+naming from recurring updates when the history records the source. **Eligible** means an agent
+may update the title if the objective changes; it does not schedule a rename. Use **Refresh** to
+check again after more activity. The panel requires a supporting server.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

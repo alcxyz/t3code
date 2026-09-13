@@ -21,7 +21,7 @@ import {
 } from "@t3tools/contracts";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Platform, Pressable, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -213,6 +213,7 @@ function HomeTopContentSpacer() {
 /* ─── Main screen ────────────────────────────────────────────────────── */
 
 export function HomeScreen(props: HomeScreenProps) {
+  const navigation = useNavigation();
   const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const [groupDisplayStates, setGroupDisplayStates] = useState<
     ReadonlyMap<string, HomeGroupDisplayState>
@@ -633,6 +634,24 @@ export function HomeScreen(props: HomeScreenProps) {
     }
     return supported;
   }, [serverConfigs]);
+  const titleUpdatesEnvironmentIds = useMemo(() => {
+    const supported = new Set<EnvironmentId>();
+    for (const [environmentId, config] of serverConfigs) {
+      if (config.environment.capabilities.threadTitleUpdates === true) {
+        supported.add(environmentId);
+      }
+    }
+    return supported;
+  }, [serverConfigs]);
+  const handleOpenTitleUpdates = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      navigation.navigate("ThreadTitleUpdates", {
+        environmentId: String(thread.environmentId),
+        threadId: String(thread.id),
+      });
+    },
+    [navigation],
+  );
   const machineByEnvironmentId = useMemo(
     () =>
       new Map(
@@ -863,7 +882,9 @@ export function HomeScreen(props: HomeScreenProps) {
           onDeleteThread={handleDeleteThread}
           onArchiveThread={props.onArchiveThread}
           onRegenerateThreadTitle={handleRegenerateThreadTitle}
+          onOpenTitleUpdates={handleOpenTitleUpdates}
           titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+          titleUpdatesSupported={titleUpdatesEnvironmentIds.has(thread.environmentId)}
           settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
           onSettleThread={handleSettleThread}
           snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
@@ -895,6 +916,7 @@ export function HomeScreen(props: HomeScreenProps) {
       handleMoveThread,
       handlePinThread,
       handleRegenerateThreadTitle,
+      handleOpenTitleUpdates,
       handleSettleThread,
       handleSnoozeThread,
       handleUnpinThread,
@@ -919,6 +941,7 @@ export function HomeScreen(props: HomeScreenProps) {
       threadListV2Items,
       threadSearchMatchByKey,
       titleRegenerationEnvironmentIds,
+      titleUpdatesEnvironmentIds,
       toggleSettledShelf,
       toggleSnoozedShelf,
       v2ProjectTitleByProjectKey,
@@ -1020,7 +1043,9 @@ export function HomeScreen(props: HomeScreenProps) {
               onArchiveThread={props.onArchiveThread}
               onDeleteThread={props.onDeleteThread}
               onRegenerateThreadTitle={handleRegenerateThreadTitle}
+              onOpenTitleUpdates={handleOpenTitleUpdates}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+              titleUpdatesSupported={titleUpdatesEnvironmentIds.has(thread.environmentId)}
               onSelectThread={props.onSelectThread}
               onSwipeableClose={handleSwipeableClose}
               onSwipeableWillOpen={handleSwipeableWillOpen}
@@ -1043,6 +1068,7 @@ export function HomeScreen(props: HomeScreenProps) {
       handleSwipeableClose,
       handleSwipeableWillOpen,
       handleRegenerateThreadTitle,
+      handleOpenTitleUpdates,
       machineByEnvironmentId,
       queuedThreadKeys,
       props.onArchiveThread,
@@ -1056,6 +1082,7 @@ export function HomeScreen(props: HomeScreenProps) {
       props.savedConnectionsById,
       threadSearchMatchByKey,
       titleRegenerationEnvironmentIds,
+      titleUpdatesEnvironmentIds,
       updateGroupDisplay,
     ],
   );

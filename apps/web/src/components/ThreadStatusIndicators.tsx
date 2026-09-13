@@ -7,7 +7,7 @@ import {
   type VcsStatusResult,
 } from "@t3tools/contracts";
 import { FolderGit2Icon, TerminalIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, type MouseEvent } from "react";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useEnvironmentQuery } from "../state/query";
@@ -222,19 +222,34 @@ export function ThreadWorktreeIndicator({
 export function ThreadStatusLabel({
   status,
   compact = false,
+  onClick,
 }: {
   status: ThreadStatusPill;
   compact?: boolean;
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   if (compact) {
     return (
       <Tooltip>
         <TooltipTrigger
           render={
-            <span
-              aria-label={status.label}
-              className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
-            />
+            onClick ? (
+              <button
+                type="button"
+                aria-label="View title updates"
+                className={`inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:ring-ring ${status.colorClass}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                }}
+                onClick={onClick}
+              />
+            ) : (
+              <span
+                aria-label={status.label}
+                className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
+              />
+            )
           }
         >
           <span
@@ -244,6 +259,31 @@ export function ThreadStatusLabel({
           />
         </TooltipTrigger>
         <TooltipPopup side="top">{status.label}</TooltipPopup>
+      </Tooltip>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="View title updates"
+              className={`inline-flex cursor-pointer items-center gap-1 rounded-sm text-[10px] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring ${status.colorClass}`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+              }}
+              onClick={onClick}
+            />
+          }
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
+          <span className="hidden md:inline">{status.label}</span>
+        </TooltipTrigger>
+        <TooltipPopup side="top">View title updates</TooltipPopup>
       </Tooltip>
     );
   }

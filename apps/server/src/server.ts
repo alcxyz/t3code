@@ -28,6 +28,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import { ThreadTitleUpdatesQueryLive } from "./persistence/Layers/ThreadTitleUpdatesQuery.ts";
 import { AutomaticThreadTitleRenameQueryLive } from "./persistence/Layers/AutomaticThreadTitleRenameQuery.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -302,7 +303,10 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
 
-const PersistenceLayerLive = AutomaticThreadTitleRateLimitLive.pipe(
+const PersistenceLayerLive = Layer.mergeAll(
+  AutomaticThreadTitleRateLimitLive,
+  ThreadTitleUpdatesQueryLive,
+).pipe(
   Layer.provide(AutomaticThreadTitleRenameQueryLive),
   Layer.provideMerge(SqlitePersistenceLayerLive),
 );

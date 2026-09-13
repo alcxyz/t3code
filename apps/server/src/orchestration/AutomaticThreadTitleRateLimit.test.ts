@@ -444,15 +444,17 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
         rollingLimit: { maxCount: 2, windowHours: 12 },
       };
       const query = yield* AutomaticThreadTitleRenameQuery;
-      expect(yield* query.latestSuccessfulRenameAt(threadId)).toEqual(
-        Option.some("2026-09-12T10:00:00.000Z"),
-      );
-      expect(
-        yield* query.countSince({
-          threadId,
-          since: "2026-09-12T00:00:00.000Z",
+      const inspection = yield* query.inspect({
+        threadId,
+        rollingSince: "2026-09-12T00:00:00.000Z",
+        rollingMaximum: 2,
+      });
+      expect(inspection).toMatchObject(
+        Option.some({
+          latestSuccessfulRenameAt: "2026-09-12T10:00:00.000Z",
+          rollingCount: 1,
         }),
-      ).toBe(1);
+      );
       const limiter = yield* AutomaticThreadTitleRateLimit;
       expect(yield* limiter.isAvailable(threadId, customLimit)).toBe(true);
       expect(yield* limiter.isAvailable(threadId, customLimit)).toBe(true);
@@ -530,6 +532,71 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
         ),
       );
       expect(availableAfterRestart).toBe(false);
+    }),
+  );
+
+  it.effect("reports the authoritative time requirement while turns are still incomplete", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("inspection-progress");
+      yield* insertInitiallyEligibleThread(threadId, 1);
+      yield* TestClock.setTime(Date.parse("2026-09-12T09:00:00.000Z"));
+
+      const inspection = Option.getOrThrow(
+        yield* (yield* AutomaticThreadTitleRateLimit).inspect(threadId, balancedLimit),
+      );
+      expect(inspection).toMatchObject({
+        phase: "initial",
+        completedTurns: 1,
+        requiredTurns: 5,
+        eligibleAt: "2026-09-12T10:00:00.000Z",
+        available: false,
+      });
+    }),
+  );
+
+  it.effect("uses stream order for recurring phase and the active rolling cap boundary", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("inspection-boundaries");
+      yield* insertInitiallyEligibleThread(threadId);
+      yield* insertSuccessfulRename({
+        eventId: "clock-newer",
+        threadId,
+        occurredAt: "2026-09-12T03:00:00.000Z",
+      });
+      yield* insertSuccessfulRename({
+        eventId: "clock-middle",
+        threadId,
+        occurredAt: "2026-09-12T02:00:00.000Z",
+      });
+      yield* insertSuccessfulRename({
+        eventId: "clock-skewed-latest",
+        threadId,
+        occurredAt: "2026-09-12T01:00:00.000Z",
+      });
+      yield* insertCompletedTurns({
+        threadId,
+        prefix: "inspection-fresh",
+        startedAt: ["2026-09-12T02:01:00.000Z", "2026-09-12T02:02:00.000Z"],
+      });
+      yield* TestClock.setTime(Date.parse("2026-09-12T04:00:00.000Z"));
+
+      const uncappedInspection = Option.getOrThrow(
+        yield* (yield* AutomaticThreadTitleRateLimit).inspect(threadId, balancedLimit),
+      );
+      expect(uncappedInspection.eligibleAt).toBe("2026-09-12T01:45:00.000Z");
+
+      const inspection = Option.getOrThrow(
+        yield* (yield* AutomaticThreadTitleRateLimit).inspect(threadId, {
+          ...balancedLimit,
+          rollingLimit: { maxCount: 2, windowHours: 12 },
+        }),
+      );
+      expect(inspection).toMatchObject({
+        phase: "recurring",
+        rollingCount: 3,
+        eligibleAt: "2026-09-12T14:00:00.000Z",
+        available: false,
+      });
     }),
   );
 

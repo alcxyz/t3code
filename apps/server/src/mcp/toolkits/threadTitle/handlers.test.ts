@@ -133,6 +133,7 @@ function makeHarness(
       }),
   });
   const rateLimit = AutomaticThreadTitleRateLimit.of({
+    inspect: () => Effect.die("unexpected title inspection"),
     isAvailable: () => Effect.succeed(options.rateLimited !== true),
     withPermit: (_threadId, _limit, effect) =>
       options.rateLimited === true

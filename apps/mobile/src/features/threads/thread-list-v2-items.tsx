@@ -380,6 +380,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => void;
+  readonly onOpenTitleUpdates: (thread: EnvironmentThreadShell) => void;
   readonly onSettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly onSnoozeThread: (thread: EnvironmentThreadShell, snoozedUntil: string) => void;
   readonly onUnsnoozeThread: (thread: EnvironmentThreadShell) => void;
@@ -396,6 +397,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly pinningSupported: boolean;
   /** False on servers that predate thread title regeneration. */
   readonly titleRegenerationSupported: boolean;
+  readonly titleUpdatesSupported: boolean;
   /** Server supports reordering this card's section. */
   readonly reorderSupported?: boolean;
   readonly onMoveThread?: (
@@ -421,6 +423,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     onSelectThread,
     onDeleteThread,
     onRegenerateThreadTitle,
+    onOpenTitleUpdates,
     onNewThreadOnBranch,
     onSettleThread,
     onSnoozeThread,
@@ -563,6 +566,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       }),
     [props.titleRegenerationSupported, thread.titleRegeneration],
   );
+  const titleUpdatesMenuItems = useMemo<MenuAction[]>(
+    () =>
+      props.titleUpdatesSupported
+        ? [{ id: "title-updates", title: "Title updates…", image: "textformat" }]
+        : [],
+    [props.titleUpdatesSupported],
+  );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
       { id: "settle", title: "Settle", image: "checkmark" },
@@ -573,19 +583,21 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         subactions: snoozePresetActions,
       },
       ...arrangementMenuItems,
+      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
       { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
     ],
-    [arrangementMenuItems, snoozePresetActions, titleRegenerationMenuItems],
+    [arrangementMenuItems, snoozePresetActions, titleRegenerationMenuItems, titleUpdatesMenuItems],
   );
   const cardMenuActions = useMemo<MenuAction[]>(
     () => [
       CARD_MENU_ACTIONS[0]!,
       ...arrangementMenuItems,
+      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
       ...CARD_MENU_ACTIONS.slice(1),
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleRegenerationMenuItems, titleUpdatesMenuItems],
   );
   const slimMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -593,23 +605,30 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ...arrangementMenuItems.filter(
         (action) => action.id !== "move-up" && action.id !== "move-down",
       ),
+      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
       SLIM_MENU_ACTIONS[1]!,
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleRegenerationMenuItems, titleUpdatesMenuItems],
   );
   const snoozedMenuActions = useMemo<MenuAction[]>(
-    () => [SNOOZED_MENU_ACTIONS[0]!, ...titleRegenerationMenuItems, SNOOZED_MENU_ACTIONS[1]!],
-    [titleRegenerationMenuItems],
+    () => [
+      SNOOZED_MENU_ACTIONS[0]!,
+      ...titleUpdatesMenuItems,
+      ...titleRegenerationMenuItems,
+      SNOOZED_MENU_ACTIONS[1]!,
+    ],
+    [titleRegenerationMenuItems, titleUpdatesMenuItems],
   );
   const legacyMenuActions = useMemo<MenuAction[]>(
     () => [
       LEGACY_MENU_ACTIONS[0]!,
       ...arrangementMenuItems,
+      ...titleUpdatesMenuItems,
       ...titleRegenerationMenuItems,
       LEGACY_MENU_ACTIONS[1]!,
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleRegenerationMenuItems, titleUpdatesMenuItems],
   );
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
@@ -623,6 +642,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "move-up") handleMoveUp();
       if (nativeEvent.event === "move-down") handleMoveDown();
       if (nativeEvent.event === "archive") handleArchive();
+      if (nativeEvent.event === "title-updates") onOpenTitleUpdates(thread);
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "delete") handleDelete();
       const snoozeSelection = resolveThreadListV2SnoozeMenuSelection({
@@ -638,6 +658,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     },
     [
       onNewThreadOnBranch,
+      onOpenTitleUpdates,
       thread,
       handleArchive,
       handleDelete,

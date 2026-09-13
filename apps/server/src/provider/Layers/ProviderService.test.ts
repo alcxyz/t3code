@@ -4924,6 +4924,7 @@ describe("provider MCP capabilities", () => {
           Layer.succeed(
             AutomaticThreadTitleRateLimit,
             AutomaticThreadTitleRateLimit.of({
+              inspect: () => Effect.die("unexpected title inspection"),
               isAvailable: isTitleRenameAvailable,
               withPermit: (_threadId, _limit, effect) => Effect.map(effect, Option.some),
             }),

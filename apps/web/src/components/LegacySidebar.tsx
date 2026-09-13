@@ -82,6 +82,7 @@ import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
   readThreadShell,
+  readEnvironmentSupportsTitleUpdates,
   useProjects,
   useThreadShells,
   useThreadShellsForProjectRefs,
@@ -123,6 +124,7 @@ import {
 } from "../threadRoutes";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
+import { openThreadTitleUpdates } from "../threadTitleUpdatesPanel";
 import { Kbd } from "./ui/kbd";
 import {
   getArm64IntelBuildWarningDescription,
@@ -729,7 +731,21 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               </TooltipPopup>
             </Tooltip>
           )}
-          {threadStatus && <ThreadStatusLabel status={threadStatus} />}
+          {threadStatus ? (
+            <ThreadStatusLabel
+              status={threadStatus}
+              {...(threadStatus.label === "Renamed" &&
+              readEnvironmentSupportsTitleUpdates(thread.environmentId)
+                ? {
+                    onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openThreadTitleUpdates(threadRef);
+                    },
+                  }
+                : {})}
+            />
+          ) : null}
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}
@@ -2212,6 +2228,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           ...(thread.branch
             ? [{ id: "new-thread-on-branch", label: `New thread on ${thread.branch}` }]
             : []),
+          ...(readEnvironmentSupportsTitleUpdates(thread.environmentId)
+            ? [{ id: "title-updates", label: "Title updates", icon: "history" }]
+            : []),
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
@@ -2257,6 +2276,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       if (clicked === "rename") {
         startThreadRename(threadKey, thread.title);
+        return;
+      }
+
+      if (clicked === "title-updates") {
+        openThreadTitleUpdates(threadRef);
         return;
       }
 

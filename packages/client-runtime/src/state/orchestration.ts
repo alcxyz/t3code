@@ -8,6 +8,12 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    titleUpdates: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:title-updates",
+      tag: ORCHESTRATION_WS_METHODS.getTitleUpdates,
+      staleTimeMs: 0,
+      idleTtlMs: 0,
+    }),
     turnDiff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:turn-diff",
       tag: ORCHESTRATION_WS_METHODS.getTurnDiff,

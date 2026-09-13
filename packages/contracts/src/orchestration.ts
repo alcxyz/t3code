@@ -27,6 +27,7 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   getWorkflowScript: "orchestration.getWorkflowScript",
+  getTitleUpdates: "orchestration.getTitleUpdates",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
@@ -2048,7 +2049,56 @@ export class OrchestrationGetWorkflowScriptError extends Schema.TaggedError<Orch
   }
 }
 
+export const OrchestrationGetTitleUpdatesInput = Schema.Struct({ threadId: ThreadId });
+export const OrchestrationGetTitleUpdatesResult = Schema.Struct({
+  threadId: ThreadId,
+  checkedAt: IsoDateTime,
+  currentTitle: TrimmedNonEmptyString,
+  profile: Schema.Literals(["rare", "balanced", "often", "custom"]),
+  status: Schema.Literals([
+    "disabled",
+    "protected",
+    "archived",
+    "deleted",
+    "snoozed",
+    "settled",
+    "regenerating",
+    "waiting",
+    "eligible",
+  ]),
+  phase: Schema.Literals(["initial", "recurring"]),
+  // Earliest time the time/window requirements pass; fresh activity is still required.
+  eligibleAt: Schema.NullOr(IsoDateTime),
+  completedTurns: NonNegativeInt,
+  requiredTurns: PositiveInt,
+  rollingCount: Schema.NullOr(NonNegativeInt),
+  rollingMaximum: Schema.NullOr(PositiveInt),
+  rollingWindowHours: Schema.NullOr(PositiveInt),
+  history: Schema.Array(
+    Schema.Struct({
+      id: TrimmedNonEmptyString,
+      at: IsoDateTime,
+      previousTitle: Schema.NullOr(TrimmedNonEmptyString),
+      title: TrimmedNonEmptyString,
+      source: Schema.Literals([
+        "initial",
+        "refinement",
+        "manual",
+        "regeneration",
+        "automatic",
+        "unknown",
+      ]),
+    }),
+  ),
+  hasMore: Schema.Boolean,
+});
+export type OrchestrationGetTitleUpdatesResult = typeof OrchestrationGetTitleUpdatesResult.Type;
+
 export const OrchestrationRpcSchemas = {
+  getTitleUpdates: {
+    input: OrchestrationGetTitleUpdatesInput,
+    output: OrchestrationGetTitleUpdatesResult,
+  },
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,

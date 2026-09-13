@@ -455,7 +455,9 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => void;
+  readonly onOpenTitleUpdates: (thread: EnvironmentThreadShell) => void;
   readonly titleRegenerationSupported: boolean;
+  readonly titleUpdatesSupported: boolean;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
   readonly simultaneousSwipeGesture?: ComponentProps<
@@ -486,6 +488,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
     onArchiveThread,
     onDeleteThread,
     onRegenerateThreadTitle,
+    onOpenTitleUpdates,
     onNewThreadOnBranch,
   } = props;
   const status = resolveThreadStatus(thread);
@@ -546,13 +549,21 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           ]
         : []),
       THREAD_ROW_MENU_ACTIONS[0]!,
+      ...(props.titleUpdatesSupported
+        ? [{ id: "title-updates", title: "Title updates…", image: "textformat" }]
+        : []),
       ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
       }),
       THREAD_ROW_MENU_ACTIONS[1]!,
     ],
-    [props.titleRegenerationSupported, thread.branch, thread.titleRegeneration],
+    [
+      props.titleRegenerationSupported,
+      props.titleUpdatesSupported,
+      thread.branch,
+      thread.titleRegeneration,
+    ],
   );
   const primaryAction = useMemo(
     () => ({
@@ -567,10 +578,18 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
       if (nativeEvent.event === "new-thread-on-branch") onNewThreadOnBranch(thread);
       if (nativeEvent.event === "archive") handleArchive();
+      if (nativeEvent.event === "title-updates") onOpenTitleUpdates(thread);
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "delete") handleDelete();
     },
-    [handleArchive, handleDelete, handleRegenerateTitle, onNewThreadOnBranch, thread],
+    [
+      handleArchive,
+      handleDelete,
+      handleRegenerateTitle,
+      onNewThreadOnBranch,
+      onOpenTitleUpdates,
+      thread,
+    ],
   );
 
   const statusPill = effectiveStatus ? (

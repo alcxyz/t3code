@@ -119,6 +119,7 @@ import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
   readThreadShell,
+  readEnvironmentSupportsTitleUpdates,
   useAllEnvironmentProjectSnapshotsReady,
   useProjects,
   useThreadShells,
@@ -137,6 +138,7 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat"
 import type { SidebarThreadSummary } from "../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
+import { openThreadTitleUpdates } from "../threadTitleUpdatesPanel";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
@@ -946,6 +948,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Pinned threads show the same pin marker in active, settled, and snoozed
   // rows. The marker can unpin the thread when the server supports pinning.
   pinningSupported: boolean;
+  titleUpdatesSupported: boolean;
   isPinned: boolean;
   // Present on rows whose server supports every drop outcome: dnd-kit
   // sortable bag applied to the row root so the whole row drags (the
@@ -1156,6 +1159,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       }
                     : null;
   const isWokeStatus = topStatus?.icon === "woke";
+  const isRenamedStatus = topStatus?.label === "Renamed";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
@@ -1327,6 +1331,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       onSnooze(threadRef, preset);
     },
     [onSnooze, threadRef],
+  );
+  const handleTitleUpdatesClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openThreadTitleUpdates(threadRef);
+    },
+    [threadRef],
   );
   // While the snooze popover is open the pointer leaves the row, which
   // would fade the hover actions out from under the open menu. Pin them and
@@ -1758,7 +1770,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     while the other controls appear beside it. */}
                   <span
                     className={cn(
-                      isWokeStatus
+                      isWokeStatus || (isRenamedStatus && props.titleUpdatesSupported)
                         ? "pointer-events-auto"
                         : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-hover/sidebar-row:absolute group-hover/sidebar-row:right-0 group-hover/sidebar-row:opacity-0",
                       "flex items-center self-center justify-self-end tabular-nums text-secondary-label transition-opacity",
@@ -1786,6 +1798,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           />
                           <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                         </Tooltip>
+                      ) : isRenamedStatus && props.titleUpdatesSupported ? (
+                        <button
+                          type="button"
+                          aria-label="View title updates"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={handleTitleUpdatesClick}
+                          className={cn(
+                            "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring",
+                            topStatus.className,
+                          )}
+                        >
+                          <span role="status">{topStatus.label}</span>
+                        </button>
                       ) : (
                         <span
                           className={cn(
@@ -3960,6 +3985,7 @@ export default function Sidebar() {
         const supportsTitleRegeneration =
           serverConfigs.get(thread.environmentId)?.environment.capabilities
             .threadTitleRegeneration === true;
+        const supportsTitleUpdates = readEnvironmentSupportsTitleUpdates(thread.environmentId);
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
@@ -3982,6 +4008,7 @@ export default function Sidebar() {
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
+                titleUpdates: supportsTitleUpdates,
               },
               snoozePresets,
             }),
@@ -4048,6 +4075,9 @@ export default function Sidebar() {
             return;
           case "rename":
             startThreadRename(threadRef, thread.title);
+            return;
+          case "title-updates":
+            openThreadTitleUpdates(threadRef);
             return;
           case "regenerate-title": {
             if (isRegeneratingTitle) return;
@@ -4662,6 +4692,9 @@ export default function Sidebar() {
                               serverConfigs.get(thread.environmentId)?.environment.capabilities
                                 .threadPinning === true
                             }
+                            titleUpdatesSupported={readEnvironmentSupportsTitleUpdates(
+                              thread.environmentId,
+                            )}
                             isPinned={thread.pinnedAt != null}
                             sortable={sortable}
                             dropVerb={

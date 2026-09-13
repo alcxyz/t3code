@@ -36,6 +36,22 @@ describe("buildThreadActionMenuItems", () => {
     ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
   });
 
+  it("shows title updates only when the environment advertises support", () => {
+    expect(
+      ids({
+        ...baseState,
+        supports: { ...baseState.supports, titleUpdates: true },
+      }),
+    ).toContain("title-updates");
+    expect(ids(baseState)).not.toContain("title-updates");
+    expect(
+      ids({
+        ...baseState,
+        supports: { ...baseState.supports, titleUpdates: false },
+      }),
+    ).not.toContain("title-updates");
+  });
+
   it("groups project settings with utility actions before archive", () => {
     const items = buildThreadActionMenuItems(baseState);
     const copyIndex = items.findIndex((item) => item.id === "copy");
