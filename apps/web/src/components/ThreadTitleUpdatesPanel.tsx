@@ -8,7 +8,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { PencilIcon, RotateCwIcon, SparklesIcon, Undo2Icon } from "lucide-react";
+import { PencilIcon, RotateCwIcon, Undo2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { orchestrationEnvironment } from "~/state/orchestration";
@@ -279,7 +279,6 @@ function TitleUpdatesContent({
           ) : null}
           <section className="rounded-lg border border-border/60 bg-card/30 p-3">
             <div className="flex items-center gap-2">
-              <SparklesIcon aria-hidden className="size-4 text-amber-500" />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{liveTitle}</span>
               <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {data.awaitingInitialTitle
@@ -487,10 +486,7 @@ export function ThreadTitleUpdatesPanel() {
     >
       <DialogPopup className="max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <SparklesIcon aria-hidden className="size-4 text-amber-500" />
-            Title updates
-          </DialogTitle>
+          <DialogTitle>Title updates</DialogTitle>
         </DialogHeader>
         <DialogPanel className="space-y-3" scrollFade={false}>
           {!supported ? (
