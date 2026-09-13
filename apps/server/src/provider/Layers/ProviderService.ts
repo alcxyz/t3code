@@ -878,6 +878,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ? yield* projectionQuery.value.getThreadShellById(threadId)
           : Option.none();
 
+      const previewEnabled =
+        Object.keys(settings.projectAgentBrowserAccessOverrides).length === 0
+          ? settings.enableAgentBrowserAccess
+          : Option.isSome(thread) &&
+            resolveProjectAgentBrowserAccess(settings, thread.value.projectId);
+      const mcpEndpointRequired = settings.automaticThreadTitles || previewEnabled;
+
       const automaticTitleLifecycleAllowsUpdates =
         settings.automaticThreadTitles &&
         Option.isSome(thread) &&
@@ -902,14 +909,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         : false;
       if (automaticTitleUpdatesAllowed) capabilities.push("thread-title");
 
-      if (Object.keys(settings.projectAgentBrowserAccessOverrides).length === 0) {
-        if (settings.enableAgentBrowserAccess) capabilities.push("preview");
-      } else if (
-        Option.isSome(thread) &&
-        resolveProjectAgentBrowserAccess(settings, thread.value.projectId)
-      ) {
-        capabilities.push("preview");
-      }
+      if (previewEnabled) capabilities.push("preview");
 
       // A title-only credential does not grant preview access. Guidance is
       // withheld unless the generated title state makes recurring updates eligible.
@@ -919,7 +919,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         browserToolsAvailable: capabilities.includes("preview"),
         ...(currentThreadTitle ? { currentThreadTitle } : {}),
       };
-      return { capabilities, runtimeInstructions };
+      return { mcpEndpointRequired, capabilities, runtimeInstructions };
     },
     Effect.catch((cause) =>
       Effect.logWarning(
@@ -927,19 +927,28 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         { cause },
       ).pipe(
         Effect.as({
+          mcpEndpointRequired: undefined,
           capabilities: [] as Array<"preview" | "thread-title">,
-          runtimeInstructions: { browserToolsAvailable: false },
+          runtimeInstructions: undefined,
         }),
       ),
     ),
   );
 
+  const clearMcpSession = (threadId: ThreadId) =>
+    revokeMcpCredential(threadId).pipe(
+      Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
       const context = yield* resolveMcpTurnContext(threadId);
-      // Every provider needs the endpoint at process startup. An empty
-      // capability set keeps all tools unauthorized while allowing a later
-      // settings toggle to enable one on the next turn without a restart.
+      if (context.mcpEndpointRequired !== true) {
+        yield* clearMcpSession(threadId);
+        return { ...context, runtimeInstructions: undefined };
+      }
+      // The endpoint must be present at process startup. Keep it attached when
+      // a configured feature is temporarily ineligible so a later turn can
+      // grant that capability without restarting the provider.
       const credential = yield* issueMcpCredential({
         threadId,
         providerInstanceId,
@@ -950,10 +959,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
       return credential ? context : { ...context, runtimeInstructions: undefined };
     });
-  const clearMcpSession = (threadId: ThreadId) =>
-    revokeMcpCredential(threadId).pipe(
-      Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
-    );
 
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Effect.succeed(event).pipe(
@@ -1668,17 +1673,22 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "provider.kind": routed.adapter.provider,
         ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
       });
-      // A turn is the clearest sign a session is still alive. The MCP
-      // credential is minted once at session start and cannot be rotated into
-      // an already-spawned agent process, so we keep the existing token valid
-      // rather than issuing a new one: sessions that go a long time between
-      // browser tool calls used to lose the toolkit outright.
       const mcpContext = yield* resolveMcpTurnContext(input.threadId);
-      yield* McpSessionRegistry.updateActiveMcpThreadCapabilities(
-        input.threadId,
-        mcpContext.capabilities,
-      );
-      yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
+      const hasMcpEndpoint =
+        McpProviderSession.readMcpProviderSession(input.threadId) !== undefined;
+      if (mcpContext.mcpEndpointRequired === false) {
+        yield* clearMcpSession(input.threadId);
+      } else if (hasMcpEndpoint) {
+        // A turn is the clearest sign a session is still alive. The MCP
+        // credential is minted once at session start and cannot be rotated into
+        // an already-spawned process, so only refresh a credential whose
+        // endpoint that process received at startup.
+        yield* McpSessionRegistry.updateActiveMcpThreadCapabilities(
+          input.threadId,
+          mcpContext.capabilities,
+        );
+        yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
+      }
       const analyticsModelSelection =
         input.modelSelection?.instanceId === routed.instanceId ? input.modelSelection : undefined;
       const turn = yield* Effect.acquireUseRelease(
@@ -1694,8 +1704,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           Effect.gen(function* () {
             const turn = yield* routed.adapter.sendTurn({
               ...input,
-              ...(McpProviderSession.readMcpProviderSession(input.threadId) &&
-              mcpContext.runtimeInstructions
+              ...(hasMcpEndpoint && mcpContext.mcpEndpointRequired && mcpContext.runtimeInstructions
                 ? { runtimeInstructions: mcpContext.runtimeInstructions }
                 : {}),
             });

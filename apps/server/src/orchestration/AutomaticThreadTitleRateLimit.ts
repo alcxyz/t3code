@@ -6,6 +6,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as RcMap from "effect/RcMap";
 import * as Semaphore from "effect/Semaphore";
 
 import type { PersistenceSqlError } from "../persistence/Errors.ts";
@@ -61,7 +62,19 @@ export class AutomaticThreadTitleRateLimit extends Context.Service<
 
 const makeAutomaticThreadTitleRateLimit = Effect.gen(function* () {
   const query = yield* AutomaticThreadTitleRenameQuery;
-  const lock = yield* Semaphore.make(1);
+  const threadLocks = yield* RcMap.make({
+    lookup: (_threadId: ThreadId) => Semaphore.make(1),
+  });
+
+  const withThreadLock = <A, E, R>(
+    threadId: ThreadId,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R> =>
+    Effect.scoped(
+      RcMap.get(threadLocks, threadId).pipe(
+        Effect.flatMap((semaphore) => semaphore.withPermits(1)(effect)),
+      ),
+    );
 
   const inspectUnlocked = Effect.fn("AutomaticThreadTitleRateLimit.inspectUnlocked")(function* (
     threadId: ThreadId,
@@ -126,14 +139,14 @@ const makeAutomaticThreadTitleRateLimit = Effect.gen(function* () {
     });
   });
 
-  const inspect: AutomaticThreadTitleRateLimitShape["inspect"] = (threadId, limit) =>
-    lock.withPermits(1)(inspectUnlocked(threadId, limit));
+  const inspect: AutomaticThreadTitleRateLimitShape["inspect"] = inspectUnlocked;
 
   const isAvailable: AutomaticThreadTitleRateLimitShape["isAvailable"] = (threadId, limit) =>
     inspect(threadId, limit).pipe(Effect.map(Option.exists((inspection) => inspection.available)));
 
   const withPermit: AutomaticThreadTitleRateLimitShape["withPermit"] = (threadId, limit, effect) =>
-    lock.withPermits(1)(
+    withThreadLock(
+      threadId,
       Effect.uninterruptible(
         Effect.gen(function* () {
           const inspection = yield* inspectUnlocked(threadId, limit);

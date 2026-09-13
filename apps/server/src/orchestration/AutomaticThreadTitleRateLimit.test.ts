@@ -5,7 +5,6 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
@@ -616,37 +615,100 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
     }),
   );
 
+  it.effect("allows unrelated inspection and admission while another rename is in flight", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-09-12T12:00:00.000Z"));
+      const heldThreadId = ThreadId.make("held-admission");
+      const unrelatedThreadId = ThreadId.make("unrelated-admission");
+      yield* insertInitiallyEligibleThread(heldThreadId);
+      yield* insertInitiallyEligibleThread(unrelatedThreadId);
+
+      const heldStarted = yield* Deferred.make<void>();
+      const releaseHeld = yield* Deferred.make<void>();
+      const unrelatedEntered = yield* Deferred.make<void>();
+      const limiter = yield* AutomaticThreadTitleRateLimit;
+      const held = yield* Effect.forkChild(
+        limiter.withPermit(
+          heldThreadId,
+          balancedLimit,
+          Deferred.succeed(heldStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseHeld)),
+          ),
+        ),
+      );
+      yield* Deferred.await(heldStarted);
+
+      yield* Effect.gen(function* () {
+        const inspection = yield* limiter.inspect(unrelatedThreadId, balancedLimit);
+        expect(Option.exists(inspection, (value) => value.available)).toBe(true);
+
+        const outcome = yield* limiter.withPermit(
+          unrelatedThreadId,
+          balancedLimit,
+          Deferred.succeed(unrelatedEntered, undefined),
+        );
+        expect(Option.isSome(outcome)).toBe(true);
+        expect(Option.isSome(yield* Deferred.poll(unrelatedEntered))).toBe(true);
+      }).pipe(Effect.ensuring(Deferred.succeed(releaseHeld, undefined)));
+
+      expect(Option.isSome(yield* Fiber.join(held))).toBe(true);
+    }),
+  );
+
   it.effect("serializes concurrent admissions through the persisted write", () =>
     Effect.gen(function* () {
       const now = "2026-09-12T12:00:00.000Z";
       yield* TestClock.setTime(Date.parse(now));
       const threadId = ThreadId.make("concurrent-admission");
       yield* insertInitiallyEligibleThread(threadId);
-      const nextId = yield* Ref.make(0);
+      const firstStarted = yield* Deferred.make<void>();
+      const releaseFirst = yield* Deferred.make<void>();
+      const secondEntered = yield* Deferred.make<void>();
       const limiter = yield* AutomaticThreadTitleRateLimit;
       const cappedLimit = {
         ...balancedLimit,
         rollingLimit: { maxCount: 1, windowHours: 12 },
       };
-      const update = Effect.gen(function* () {
-        const id = yield* Ref.updateAndGet(nextId, (value) => value + 1);
-        yield* insertSuccessfulRename({
-          eventId: `concurrent-${id}`,
+      const first = yield* Effect.forkChild(
+        limiter.withPermit(
           threadId,
-          occurredAt: now,
-        });
-        return id;
-      });
-
-      const outcomes = yield* Effect.all(
-        [
-          limiter.withPermit(threadId, cappedLimit, update),
-          limiter.withPermit(threadId, cappedLimit, update),
-        ],
-        { concurrency: "unbounded" },
+          cappedLimit,
+          Effect.gen(function* () {
+            yield* Deferred.succeed(firstStarted, undefined);
+            yield* Deferred.await(releaseFirst);
+            yield* insertSuccessfulRename({
+              eventId: "concurrent-first",
+              threadId,
+              occurredAt: now,
+            });
+          }),
+        ),
       );
-      expect(outcomes.filter(Option.isSome)).toHaveLength(1);
-      expect(yield* Ref.get(nextId)).toBe(1);
+      yield* Deferred.await(firstStarted);
+      const second = yield* Effect.forkChild(
+        limiter.withPermit(
+          threadId,
+          cappedLimit,
+          Deferred.succeed(secondEntered, undefined).pipe(
+            Effect.andThen(
+              insertSuccessfulRename({
+                eventId: "concurrent-second",
+                threadId,
+                occurredAt: now,
+              }),
+            ),
+          ),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* Effect.yieldNow;
+        expect(Option.isNone(yield* Deferred.poll(secondEntered))).toBe(true);
+      }).pipe(Effect.ensuring(Deferred.succeed(releaseFirst, undefined)));
+
+      expect(Option.isSome(yield* Fiber.join(first))).toBe(true);
+      expect(Option.isNone(yield* Fiber.join(second))).toBe(true);
+      expect(Option.isNone(yield* Deferred.poll(secondEntered))).toBe(true);
     }),
   );
 
@@ -704,6 +766,48 @@ tests("AutomaticThreadTitleRateLimit", (it) => {
       yield* Fiber.await(interruption);
       expect(Option.isNone(yield* Fiber.join(second))).toBe(true);
       expect(Option.isNone(yield* Deferred.poll(secondEntered))).toBe(true);
+    }),
+  );
+
+  it.effect("releases a cancelled waiter's keyed lock reference", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-09-12T12:00:00.000Z"));
+      const threadId = ThreadId.make("cancelled-waiter");
+      yield* insertInitiallyEligibleThread(threadId);
+      const heldStarted = yield* Deferred.make<void>();
+      const releaseHeld = yield* Deferred.make<void>();
+      const cancelledEntered = yield* Deferred.make<void>();
+      const resumedEntered = yield* Deferred.make<void>();
+      const limiter = yield* AutomaticThreadTitleRateLimit;
+
+      const held = yield* Effect.forkChild(
+        limiter.withPermit(
+          threadId,
+          balancedLimit,
+          Deferred.succeed(heldStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseHeld)),
+          ),
+        ),
+      );
+      yield* Deferred.await(heldStarted);
+      const waiting = yield* Effect.forkChild(
+        limiter.withPermit(threadId, balancedLimit, Deferred.succeed(cancelledEntered, undefined)),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* Effect.yieldNow;
+        yield* Fiber.interrupt(waiting);
+        expect(Option.isNone(yield* Deferred.poll(cancelledEntered))).toBe(true);
+      }).pipe(Effect.ensuring(Deferred.succeed(releaseHeld, undefined)));
+      expect(Option.isSome(yield* Fiber.join(held))).toBe(true);
+
+      const resumed = yield* limiter.withPermit(
+        threadId,
+        balancedLimit,
+        Deferred.succeed(resumedEntered, undefined),
+      );
+      expect(Option.isSome(resumed)).toBe(true);
+      expect(Option.isSome(yield* Deferred.poll(resumedEntered))).toBe(true);
     }),
   );
 });

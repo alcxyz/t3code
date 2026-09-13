@@ -995,10 +995,13 @@ export const ServerSettings = Schema.Struct({
   ),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
-   * withholds the MCP credential, so the `t3-code` server (and with it every
-   * `preview_*` tool) is never attached to a provider session, and the prompt
-   * text describing those tools is dropped along with them. The user's own
-   * browser panel is unaffected — this gates agent access only.
+   * withholds the preview MCP capability and its prompt text. If no other
+   * `t3-code` feature is enabled, the shared endpoint is omitted when the
+   * provider session starts. Automatic titles may keep that endpoint attached,
+   * but do not grant any `preview_*` tool. Enabling the first MCP feature later
+   * takes effect with the next provider session rather than restarting the
+   * active provider. The user's own browser panel is unaffected — this gates
+   * agent access only.
    *
    * Server-authoritative rather than client-local: tool injection and prompt
    * construction both happen on the server, and the answer must not differ

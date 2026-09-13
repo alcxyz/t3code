@@ -1,4 +1,4 @@
-import { ThreadId } from "@t3tools/contracts";
+import { CommandId, ThreadId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -99,7 +99,7 @@ it.effect("reports every runtime gate before quota eligibility", () =>
 
 it.effect("offers undo only while the latest automatic rename still owns the title", () =>
   Effect.gen(function* () {
-    const automaticVersion = "agent-thread-title:latest";
+    const automaticVersion = CommandId.make("agent-thread-title:latest");
     const history = [
       {
         id: "event-latest",
@@ -118,7 +118,7 @@ it.effect("offers undo only while the latest automatic rename still owns the tit
     expect(current.undoTitle).toBe("Previous title");
 
     for (const thread of [
-      { titleVersion: "manual-same-title", history },
+      { titleVersion: CommandId.make("manual-same-title"), history },
       { titleVersion: automaticVersion, titleSource: "manual" as const, history },
       { titleVersion: automaticVersion, titleRegenerationRequestId: "pending", history },
     ]) {
