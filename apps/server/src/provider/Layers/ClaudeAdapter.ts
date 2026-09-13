@@ -1433,11 +1433,7 @@ function buildPromptText(
   const caps = getClaudeCatalogModelCapabilities(catalog, claudeModel);
 
   const promptEffort = resolvePromptInjectedEffort(caps, rawEffort);
-  const prompt = applyClaudePromptEffortPrefix(input.input?.trim() ?? "", promptEffort);
-  const titleInstructions = buildThreadTitleInstructions(
-    input.runtimeInstructions?.currentThreadTitle,
-  );
-  return titleInstructions ? `${titleInstructions}\n\n${prompt}` : prompt;
+  return applyClaudePromptEffortPrefix(input.input?.trim() ?? "", promptEffort);
 }
 
 function buildUserMessage(input: {
@@ -1481,6 +1477,12 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
 ) {
   const text = buildPromptText(input, dependencies.boundInstanceId, dependencies.modelCatalog);
   const sdkContent: Array<Record<string, unknown>> = [];
+  const titleInstructions = buildThreadTitleInstructions(
+    input.runtimeInstructions?.currentThreadTitle,
+  );
+  if (titleInstructions) {
+    sdkContent.push({ type: "text", text: titleInstructions });
+  }
 
   // Claude Code expands a skill only from the LAST text block, and only when
   // `/name` is its first character. A `$skill` chip anywhere in the prompt is

@@ -8,6 +8,7 @@ import { resolveAutomaticThreadTitleRenameLimit } from "@t3tools/shared/serverSe
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import { requiresNewMcpProviderSession } from "../mcp/McpProviderSession.ts";
 import { ThreadTitleUpdatesQuery } from "../persistence/Services/ThreadTitleUpdatesQuery.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { AutomaticThreadTitleRateLimit } from "./AutomaticThreadTitleRateLimit.ts";
@@ -38,7 +39,9 @@ export const getThreadTitleUpdates = Effect.fn("getThreadTitleUpdates")(function
 
   const value = thread.value;
   const quota = inspection.value;
-  const awaitingInitialTitle = value.titleSource === null && value.title === DEFAULT_THREAD_TITLE;
+  const awaitingInitialTitle =
+    value.titleSource !== "manual" && value.title === DEFAULT_THREAD_TITLE;
+  const awaitingProviderSession = requiresNewMcpProviderSession(threadId);
   const latestHistory = value.history[0];
   const undoTitle =
     value.titleSource === "generated" &&
@@ -75,9 +78,9 @@ export const getThreadTitleUpdates = Effect.fn("getThreadTitleUpdates")(function
                     value.titleSource !== "generated" ||
                     value.title === DEFAULT_THREAD_TITLE
                   ? "protected"
-                  : quota.available
-                    ? "eligible"
-                    : "waiting";
+                  : awaitingProviderSession || !quota.available
+                    ? "waiting"
+                    : "eligible";
 
   return {
     threadId,
@@ -88,6 +91,8 @@ export const getThreadTitleUpdates = Effect.fn("getThreadTitleUpdates")(function
     profile: settings.automaticThreadTitleRenamePolicy,
     status,
     awaitingInitialTitle: status === "waiting" && awaitingInitialTitle,
+    awaitingProviderSession:
+      status === "waiting" && !awaitingInitialTitle && awaitingProviderSession,
     phase: quota.phase,
     eligibleAt: quota.eligibleAt,
     completedTurns: quota.completedTurns,

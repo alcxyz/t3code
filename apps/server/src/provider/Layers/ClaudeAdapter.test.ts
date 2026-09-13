@@ -944,6 +944,41 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("keeps title guidance ahead of a raw slash command", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "/flow-patterns hello",
+        attachments: [],
+        runtimeInstructions: {
+          browserToolsAvailable: false,
+          currentThreadTitle: "Investigate prompt dispatch",
+        },
+      });
+
+      const promptMessage = yield* Effect.promise(() =>
+        readFirstPromptMessage(harness.getLastCreateQueryInput()),
+      );
+      assert.isDefined(promptMessage);
+      const blocks = promptMessage.message.content as Array<{ type: string; text?: string }>;
+      assert.equal(blocks.length, 2);
+      assert.match(blocks[0]?.text ?? "", /<thread_title_updates>/);
+      assert.match(blocks[0]?.text ?? "", /Investigate prompt dispatch/);
+      assert.deepEqual(blocks[1], { type: "text", text: "/flow-patterns hello" });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("dispatches a $skill mention as a trailing slash command block", () => {
     // Claude Code only runs `/name` from the message's last text block, so a
     // chip picked mid-prompt is moved there and the surrounding prose kept.
@@ -969,12 +1004,21 @@ describe("ClaudeAdapterLive", () => {
         threadId: session.threadId,
         input: "ok, now $implement all the tickets\nstart with auth",
         attachments: [],
+        runtimeInstructions: {
+          browserToolsAvailable: false,
+          currentThreadTitle: "Implement ticket backlog",
+        },
       });
 
       const promptMessage = yield* Effect.promise(() =>
         readFirstPromptMessage(harness.getLastCreateQueryInput()),
       );
-      assert.deepEqual(promptMessage?.message.content, [
+      assert.isDefined(promptMessage);
+      const blocks = promptMessage.message.content as Array<{ type: string; text?: string }>;
+      assert.equal(blocks.length, 3);
+      assert.match(blocks[0]?.text ?? "", /<thread_title_updates>/);
+      assert.match(blocks[0]?.text ?? "", /Implement ticket backlog/);
+      assert.deepEqual(blocks.slice(1), [
         { type: "text", text: "ok, now" },
         { type: "text", text: "/implement all the tickets\nstart with auth" },
       ]);

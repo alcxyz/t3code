@@ -929,7 +929,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         Effect.as({
           mcpEndpointRequired: undefined,
           capabilities: [] as Array<"preview" | "thread-title">,
-          runtimeInstructions: undefined,
+          runtimeInstructions: { browserToolsAvailable: false },
         }),
       ),
     ),
@@ -944,6 +944,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const context = yield* resolveMcpTurnContext(threadId);
       if (context.mcpEndpointRequired !== true) {
         yield* clearMcpSession(threadId);
+        yield* Effect.sync(() => McpProviderSession.markMcpProviderSessionUnavailable(threadId));
         return { ...context, runtimeInstructions: undefined };
       }
       // The endpoint must be present at process startup. Keep it attached when
@@ -956,6 +957,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       });
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
+      } else {
+        yield* Effect.sync(() => McpProviderSession.markMcpProviderSessionUnavailable(threadId));
       }
       return credential ? context : { ...context, runtimeInstructions: undefined };
     });
@@ -1703,7 +1706,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           Effect.gen(function* () {
             const turn = yield* routed.adapter.sendTurn({
               ...input,
-              ...(hasMcpEndpoint && mcpContext.mcpEndpointRequired && mcpContext.runtimeInstructions
+              ...(hasMcpEndpoint && mcpContext.runtimeInstructions
                 ? { runtimeInstructions: mcpContext.runtimeInstructions }
                 : {}),
             });

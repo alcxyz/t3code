@@ -174,7 +174,6 @@ ${browserToolInstructions(browserToolsAvailable)}
 export interface CodexRuntimeInfo {
   readonly model: string;
   readonly reasoningEffort: string;
-  readonly currentThreadTitle?: string;
 }
 
 export function buildCodexDeveloperInstructions(
@@ -193,5 +192,9 @@ export function buildCodexDeveloperInstructions(
       : codexDefaultModeDeveloperInstructions(browserToolsAvailable);
   return `${base}
 
-${buildRuntimeInstructions({ harness: "Codex", ...runtime })}`;
+${buildRuntimeInstructions({
+  harness: "Codex",
+  model: runtime.model,
+  reasoningEffort: runtime.reasoningEffort,
+})}`;
 }

@@ -82,7 +82,9 @@ function statusReason(data: TitleUpdatesResult): string {
     case "regenerating":
       return "A title regeneration request is already running.";
     case "waiting":
-      return "";
+      return data.awaitingProviderSession
+        ? "Automatic updates require a new provider session. Use Regenerate to update this title now."
+        : "";
     case "eligible":
       return "Updates only when the objective changes.";
   }
@@ -132,6 +134,7 @@ function TitleUpdatesContent({
   const regenerationRequestId = liveThread?.titleRegeneration?.requestId ?? null;
   const isRegenerating = regenerationRequestId !== null;
   const titleVersion = liveThread?.titleState?.version ?? null;
+  const sessionStatus = liveThread?.session?.status ?? null;
   const canManageTitle = liveThread !== null && data?.status !== "deleted";
   const titleBusy =
     isSavingTitle || isStartingRegeneration || isRegenerating || restoringTarget !== null;
@@ -139,20 +142,22 @@ function TitleUpdatesContent({
     titleVersion,
     title: liveThread?.title ?? null,
     regenerationRequestId,
+    sessionStatus,
   });
 
   useEffect(() => {
     const previous = previousLiveTitleState.current;
     const title = liveThread?.title ?? null;
-    previousLiveTitleState.current = { title, regenerationRequestId, titleVersion };
+    previousLiveTitleState.current = { title, regenerationRequestId, titleVersion, sessionStatus };
     if (
       previous.title !== title ||
       previous.regenerationRequestId !== regenerationRequestId ||
-      previous.titleVersion !== titleVersion
+      previous.titleVersion !== titleVersion ||
+      previous.sessionStatus !== sessionStatus
     ) {
       refreshTitleUpdates();
     }
-  }, [liveThread?.title, refreshTitleUpdates, regenerationRequestId, titleVersion]);
+  }, [liveThread?.title, refreshTitleUpdates, regenerationRequestId, titleVersion, sessionStatus]);
 
   const canRestore =
     !isEditingTitle &&
@@ -277,7 +282,11 @@ function TitleUpdatesContent({
               <SparklesIcon aria-hidden className="size-4 text-amber-500" />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{liveTitle}</span>
               <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {data.awaitingInitialTitle ? "Awaiting title" : STATUS_LABELS[data.status]}
+                {data.awaitingInitialTitle
+                  ? "Awaiting title"
+                  : data.awaitingProviderSession
+                    ? "Next session"
+                    : STATUS_LABELS[data.status]}
               </span>
             </div>
             {isEditingTitle ? (
@@ -371,11 +380,12 @@ function TitleUpdatesContent({
               </div>
             ) : null}
             {!data.awaitingInitialTitle &&
+            !data.awaitingProviderSession &&
             (data.status === "waiting" || data.status === "eligible") ? (
               <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <div>
                   <span className="block text-muted-foreground">
-                    {data.phase === "initial" ? "Completed exchanges" : "Fresh exchanges"}
+                    {data.phase === "initial" ? "Completed turns" : "New completed turns"}
                   </span>
                   <span className="font-mono tabular-nums">
                     {data.completedTurns} of {data.requiredTurns}
@@ -458,10 +468,10 @@ function TitleUpdatesContent({
 
 export function ThreadTitleUpdatesPanel() {
   const threadRef = useThreadTitleUpdatesPanelStore((state) => state.threadRef);
-  const open = threadRef !== null;
+  const open = useThreadTitleUpdatesPanelStore((state) => state.open);
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const supported =
-    open &&
+    threadRef !== null &&
     serverConfigs.get(threadRef.environmentId)?.environment.capabilities.threadTitleUpdates ===
       true;
 
@@ -470,6 +480,9 @@ export function ThreadTitleUpdatesPanel() {
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) closeThreadTitleUpdates();
+      }}
+      onOpenChangeComplete={(nextOpen) => {
+        if (!nextOpen) useThreadTitleUpdatesPanelStore.getState().completeClose();
       }}
     >
       <DialogPopup className="max-w-xl">

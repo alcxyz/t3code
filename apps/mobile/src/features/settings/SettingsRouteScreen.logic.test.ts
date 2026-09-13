@@ -32,7 +32,7 @@ describe("formatAutomaticTitleRenameLimitDescription", () => {
         rollingLimit: null,
       }),
     ).toBe(
-      "The first update requires 120 minutes and 5 completed turns. After the last feature-generated title update, another requires 45 minutes and 2 new completed turns. No rolling limit.",
+      "First update: 120 minutes old and 5 completed turns. Later updates: 45 minutes and 2 new completed turns. No rolling limit.",
     );
   });
 

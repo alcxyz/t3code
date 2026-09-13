@@ -20,5 +20,5 @@ export function formatAutomaticTitleRenameLimitDescription(limit: {
     limit.rollingLimit === null
       ? "No rolling limit."
       : `At most ${limit.rollingLimit.maxCount} updates per rolling ${limit.rollingLimit.windowHours}-hour window.`;
-  return `The first update requires ${limit.minAgeMinutes} minutes and ${limit.minCompletedTurns} completed ${firstTurnLabel}. After the last feature-generated title update, another requires ${limit.cooldownMinutes} minutes and ${limit.minFreshTurns} new completed ${freshTurnLabel}. ${rollingDescription}`;
+  return `First update: ${limit.minAgeMinutes} minutes old and ${limit.minCompletedTurns} completed ${firstTurnLabel}. Later updates: ${limit.cooldownMinutes} minutes and ${limit.minFreshTurns} new completed ${freshTurnLabel}. ${rollingDescription}`;
 }

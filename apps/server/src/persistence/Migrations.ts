@@ -10,6 +10,7 @@
 
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -127,6 +128,57 @@ const migrationEntries = [
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
+const releasePrerequisiteTitleStateMigrationId = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const migrationTables = yield* sql<{ readonly name: string }>`
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'effect_sql_migrations'
+      `;
+      if (migrationTables.length === 0) {
+        return;
+      }
+
+      const recordedMigrations = yield* sql<{
+        readonly id: number;
+        readonly name: string;
+      }>`
+        SELECT migration_id AS id, name
+        FROM effect_sql_migrations
+        ORDER BY migration_id
+      `;
+      const prerequisiteMigration = recordedMigrations.at(-1);
+      const hasExactPrerequisiteHistory =
+        recordedMigrations.length === migrationManifest.length + 1 &&
+        migrationManifest.every(
+          ([id, name], index) =>
+            recordedMigrations[index]?.id === id && recordedMigrations[index]?.name === name,
+        ) &&
+        prerequisiteMigration?.id === 50 &&
+        prerequisiteMigration.name === "ProjectionThreadTitleState";
+      if (!hasExactPrerequisiteHistory) {
+        return;
+      }
+
+      const columns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(projection_threads)
+      `;
+      if (!columns.some((column) => column.name === "title_state_json")) {
+        return;
+      }
+
+      // Prerequisite builds briefly claimed upstream migration 50 for this exact
+      // column. Release only that fully matched history so upstream can reuse 50.
+      yield* sql`
+        DELETE FROM effect_sql_migrations
+        WHERE migration_id = 50 AND name = 'ProjectionThreadTitleState'
+      `;
+    }),
+  );
+});
+
 const makeMigrationLoader = (throughId?: number) =>
   Migrator.fromRecord(
     Object.fromEntries(
@@ -159,6 +211,9 @@ export interface RunMigrationsOptions {
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
+  if (toMigrationInclusive === undefined) {
+    yield* releasePrerequisiteTitleStateMigrationId;
+  }
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
   // This fork and the pinned, unmerged title-state PR must not claim a numbered
   // migration: upstream owns that sequence, and the Effect migrator skips every

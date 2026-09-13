@@ -7,16 +7,11 @@ export default Effect.gen(function* () {
   const columns = yield* sql<{ readonly name: string }>`
     PRAGMA table_info(projection_threads)
   `;
-  const hasLegacyTitleSource = columns.some((column) => column.name === "title_source");
   if (!columns.some((column) => column.name === "title_state_json")) {
     yield* sql`ALTER TABLE projection_threads ADD COLUMN title_state_json TEXT`;
   }
   if (!columns.some((column) => column.name === "title_auto_renamed_at")) {
     yield* sql`ALTER TABLE projection_threads ADD COLUMN title_auto_renamed_at TEXT`;
-  }
-
-  if (!hasLegacyTitleSource) {
-    return;
   }
 
   yield* sql`

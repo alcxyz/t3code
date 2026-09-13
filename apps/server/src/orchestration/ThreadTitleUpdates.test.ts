@@ -2,6 +2,10 @@ import { CommandId, ThreadId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import {
+  clearMcpProviderSession,
+  markMcpProviderSessionUnavailable,
+} from "../mcp/McpProviderSession.ts";
 
 import {
   ThreadTitleUpdatesQuery,
@@ -135,6 +139,12 @@ it.effect("distinguishes initial naming from a protected default title", () =>
       awaitingInitialTitle: true,
     });
     expect(
+      yield* readTitleUpdates({ thread: { ...untitled, titleSource: "generated" } }),
+    ).toMatchObject({
+      status: "waiting",
+      awaitingInitialTitle: true,
+    });
+    expect(
       yield* readTitleUpdates({ thread: { ...untitled, titleSource: "manual" } }),
     ).toMatchObject({ status: "protected", awaitingInitialTitle: false });
     expect(
@@ -147,6 +157,33 @@ it.effect("distinguishes initial naming from a protected default title", () =>
       awaitingInitialTitle: false,
     });
   }),
+);
+
+it.effect("waits for a new provider session when this session has no title tool", () =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => markMcpProviderSessionUnavailable(threadId)),
+    () =>
+      Effect.gen(function* () {
+        expect(yield* readTitleUpdates({})).toMatchObject({
+          status: "waiting",
+          awaitingProviderSession: true,
+        });
+        expect(yield* readTitleUpdates({ thread: { titleSource: "manual" } })).toMatchObject({
+          status: "protected",
+          awaitingProviderSession: false,
+        });
+        expect(yield* readTitleUpdates({ enabled: false })).toMatchObject({
+          status: "disabled",
+          awaitingProviderSession: false,
+        });
+        clearMcpProviderSession(threadId);
+        expect(yield* readTitleUpdates({})).toMatchObject({
+          status: "eligible",
+          awaitingProviderSession: false,
+        });
+      }),
+    () => Effect.sync(() => clearMcpProviderSession(threadId)),
+  ),
 );
 
 it.effect("fails a missing thread without querying quota", () =>

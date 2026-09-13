@@ -2634,7 +2634,7 @@ export function GeneralSettingsPanel() {
               <SettingsRow
                 serverScoped
                 {...searchableSetting("automatic-thread-title-frequency")}
-                description={`The first update requires the thread to be at least ${automaticTitleRenameLimit.minAgeMinutes} minutes old and have ${automaticTitleRenameLimit.minCompletedTurns} completed ${automaticTitleRenameLimit.minCompletedTurns === 1 ? "turn" : "turns"}. After the last feature-generated title update, another requires ${automaticTitleRenameLimit.cooldownMinutes} minutes and ${automaticTitleRenameLimit.minFreshTurns} new completed ${automaticTitleRenameLimit.minFreshTurns === 1 ? "turn" : "turns"}.${automaticTitleRenameLimit.rollingLimit === null ? " No rolling limit." : ` Allows at most ${automaticTitleRenameLimit.rollingLimit.maxCount === 1 ? "one update" : `${automaticTitleRenameLimit.rollingLimit.maxCount} updates`} per rolling ${automaticTitleRenameLimit.rollingLimit.windowHours}-hour window.`}`}
+                description={`First update: ${automaticTitleRenameLimit.minAgeMinutes} minutes old and ${automaticTitleRenameLimit.minCompletedTurns} completed ${automaticTitleRenameLimit.minCompletedTurns === 1 ? "turn" : "turns"}. Later updates: ${automaticTitleRenameLimit.cooldownMinutes} minutes and ${automaticTitleRenameLimit.minFreshTurns} new completed ${automaticTitleRenameLimit.minFreshTurns === 1 ? "turn" : "turns"}.${automaticTitleRenameLimit.rollingLimit === null ? " No rolling limit." : ` Allows at most ${automaticTitleRenameLimit.rollingLimit.maxCount === 1 ? "one update" : `${automaticTitleRenameLimit.rollingLimit.maxCount} updates`} per rolling ${automaticTitleRenameLimit.rollingLimit.windowHours}-hour window.`}`}
                 resetAction={
                   settings.automaticThreadTitleRenamePolicy !==
                     DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy ||
@@ -2771,7 +2771,7 @@ export function GeneralSettingsPanel() {
                 <SettingsRow
                   serverScoped
                   title="Recurring title eligibility"
-                  description="After the last feature-generated title update, both thresholds must be met. Fresh turns start after the rename; the turn containing the rename does not count."
+                  description="Both requirements apply after each automatic update. New turns must start after that update."
                   control={
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <NumberField

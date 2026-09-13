@@ -48,6 +48,11 @@ it.layer(NodeSqliteClient.layerMemory())("fork title-state compatibility", (it) 
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 49 });
+      yield* sql`ALTER TABLE projection_threads ADD COLUMN title_state_json TEXT`;
+      yield* sql`
+        INSERT INTO effect_sql_migrations (migration_id, name)
+        VALUES (50, 'ProjectionThreadTitleState')
+      `;
       yield* sql`ALTER TABLE projection_threads ADD COLUMN title_source TEXT`;
       yield* sql`ALTER TABLE projection_threads ADD COLUMN title_auto_renamed_at TEXT`;
 
@@ -112,6 +117,30 @@ it.layer(NodeSqliteClient.layerMemory())("fork title-state compatibility", (it) 
   );
 });
 
+it.layer(NodeSqliteClient.layerMemory())("fork migration ledger compatibility", (it) => {
+  it.effect("leaves migration 50 alone when its provenance does not match", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 49 });
+      yield* sql`ALTER TABLE projection_threads ADD COLUMN title_state_json TEXT`;
+      yield* sql`
+        INSERT INTO effect_sql_migrations (migration_id, name)
+        VALUES (50, 'UnrelatedUpstreamMigration')
+      `;
+
+      yield* runMigrations();
+
+      const migrations = yield* sql<{ readonly id: number; readonly name: string }>`
+        SELECT migration_id AS id, name
+        FROM effect_sql_migrations
+        ORDER BY migration_id DESC
+        LIMIT 1
+      `;
+      assert.deepEqual(migrations, [{ id: 50, name: "UnrelatedUpstreamMigration" }]);
+    }),
+  );
+});
+
 it.layer(NodeSqliteClient.layerMemory())("title-state reconciliation", (it) => {
   it.effect("preserves newer state-only events and JSON boolean types on repeated runs", () =>
     Effect.gen(function* () {
@@ -158,6 +187,91 @@ it.layer(NodeSqliteClient.layerMemory())("title-state reconciliation", (it) => {
           booleanType: "false",
         },
       ]);
+    }),
+  );
+});
+
+it.layer(NodeSqliteClient.layerMemory())("native database title-state compatibility", (it) => {
+  it.effect("folds upstream edits without a legacy source column", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations();
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          created_at, updated_at, title_state_json, title_auto_renamed_at
+        ) VALUES (
+          'native-roundtrip', 'project-1', 'Generated title',
+          '{"instanceId":"codex","model":"gpt-5.4"}', 'full-access',
+          '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z',
+          '{"source":"generated","version":"generated-command","needsRefinement":false}',
+          '2026-01-02T00:00:00.000Z'
+        )
+      `;
+      yield* insertEvent(sql, {
+        id: "generated-event",
+        threadId: "native-roundtrip",
+        sequence: 1,
+        commandId: "generated-command",
+        payload:
+          '{"title":"Generated title","titleState":{"source":"generated","version":"generated-command","needsRefinement":false},"titleAutoRenamedAt":"2026-01-02T00:00:00.000Z"}',
+      });
+      yield* reconcileTitleState;
+
+      // An older upstream build changes the title without the fork's ownership
+      // state, then clears the automatic-rename badge in a later event.
+      yield* sql`
+        UPDATE projection_threads
+        SET title = 'Upstream manual title'
+        WHERE thread_id = 'native-roundtrip'
+      `;
+      yield* insertEvent(sql, {
+        id: "manual-event",
+        threadId: "native-roundtrip",
+        sequence: 2,
+        commandId: "manual-command",
+        actorKind: "client",
+        payload: '{"title":"Upstream manual title"}',
+      });
+      yield* insertEvent(sql, {
+        id: "badge-clear-event",
+        threadId: "native-roundtrip",
+        sequence: 3,
+        commandId: "badge-clear-command",
+        payload: '{"titleAutoRenamedAt":null}',
+      });
+
+      for (const _ of [1, 2]) {
+        yield* runMigrations();
+      }
+
+      const columns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(projection_threads)
+      `;
+      assert.ok(!columns.some((column) => column.name === "title_source"));
+      const rows = yield* sql<{
+        readonly state: string;
+        readonly renamedAt: string | null;
+      }>`
+        SELECT title_state_json AS state,
+          title_auto_renamed_at AS "renamedAt"
+        FROM projection_threads
+        WHERE thread_id = 'native-roundtrip'
+      `;
+      assert.deepEqual(
+        rows.map((row) => ({ ...row, state: JSON.parse(row.state) })),
+        [
+          {
+            state: {
+              source: "manual",
+              version: "manual-command",
+              needsRefinement: false,
+            },
+            renamedAt: null,
+          },
+        ],
+      );
     }),
   );
 });

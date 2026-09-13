@@ -2084,6 +2084,8 @@ export const OrchestrationGetTitleUpdatesResult = Schema.Struct({
   ]),
   /** Distinguishes native initial naming from recurring policy requirements. */
   awaitingInitialTitle: Schema.optional(Schema.Boolean),
+  /** The current provider session started without the title tool. */
+  awaitingProviderSession: Schema.optional(Schema.Boolean),
   phase: Schema.Literals(["initial", "recurring"]),
   // Earliest time the time/window requirements pass; fresh activity is still required.
   eligibleAt: Schema.NullOr(IsoDateTime),

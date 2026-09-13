@@ -51,9 +51,9 @@ const SOURCE_LABELS: Record<
   automatic: "Automatic update",
   initial: "Initial title",
   manual: "Manual rename",
-  refinement: "Automatic refinement",
+  refinement: "Refinement",
   regeneration: "Regenerated",
-  unknown: "Unknown",
+  unknown: "Unknown source",
 };
 
 function formatDate(value: string): string {
@@ -68,7 +68,9 @@ function eligibilityMessage(result: OrchestrationGetTitleUpdatesResult): string 
     case "eligible":
       return "Updates only when the objective changes.";
     case "waiting":
-      return "";
+      return result.awaitingProviderSession
+        ? "Automatic updates require a new provider session. Use Regenerate to update this title now."
+        : "";
     case "disabled":
       return "Automatic title updates are disabled for this server.";
     case "protected":
@@ -134,6 +136,7 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
     thread?.title,
     thread?.titleState?.version,
     thread?.titleRegeneration?.requestId,
+    thread?.session?.status,
   ]);
   const lastTitleStamp = useRef(titleStamp);
   const refreshQuery = query.refresh;
@@ -279,7 +282,11 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
                 </View>
                 <View className="rounded-full bg-subtle px-2.5 py-1">
                   <Text className="text-xs font-t3-bold text-foreground">
-                    {result.awaitingInitialTitle ? "Awaiting title" : STATUS_LABELS[result.status]}
+                    {result.awaitingInitialTitle
+                      ? "Awaiting title"
+                      : result.awaitingProviderSession
+                        ? "Next session"
+                        : STATUS_LABELS[result.status]}
                   </Text>
                 </View>
               </View>
@@ -399,10 +406,11 @@ export function ThreadTitleUpdatesSheet(props: ThreadTitleUpdatesSheetProps) {
             </View>
 
             {!result.awaitingInitialTitle &&
+            !result.awaitingProviderSession &&
             (result.status === "waiting" || result.status === "eligible") ? (
               <View className="overflow-hidden rounded-2xl bg-card">
                 <DetailRow
-                  label={result.phase === "initial" ? "Completed exchanges" : "Fresh exchanges"}
+                  label={result.phase === "initial" ? "Completed turns" : "New completed turns"}
                   value={`${result.completedTurns} of ${result.requiredTurns}`}
                 />
                 {result.rollingCount !== null && result.rollingMaximum !== null ? (

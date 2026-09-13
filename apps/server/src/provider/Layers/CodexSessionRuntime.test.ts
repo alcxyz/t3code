@@ -195,6 +195,28 @@ describe("buildTurnStartParams", () => {
     NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
   });
 
+  it.effect(
+    "keeps browser guidance out of the Codex turn payload when preview is unavailable",
+    () =>
+      Effect.gen(function* () {
+        const params = yield* buildTurnStartParams({
+          threadId: "provider-thread-1",
+          runtimeMode: "full-access",
+          prompt: "Continue without preview tools",
+          interactionMode: "default",
+          browserToolsAvailable: false,
+        });
+
+        const instructions = params.collaborationMode?.settings.developer_instructions;
+        NodeAssert.ok(instructions);
+        NodeAssert.doesNotMatch(instructions, /preview_status/);
+        NodeAssert.doesNotMatch(instructions, /preview_open/);
+        NodeAssert.deepStrictEqual(params.input, [
+          { type: "text", text: "Continue without preview tools" },
+        ]);
+      }),
+  );
+
   it.effect("refreshes automatic thread-title guidance in each turn payload", () =>
     Effect.gen(function* () {
       const titledTurn = yield* buildTurnStartParams({

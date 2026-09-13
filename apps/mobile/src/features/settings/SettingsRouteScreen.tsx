@@ -921,9 +921,8 @@ function SharedThreadSettingsRows() {
                 <View className="gap-1">
                   <Text className="text-lg text-foreground">Recurring title eligibility</Text>
                   <Text className="text-sm leading-normal text-foreground-muted">
-                    After the last feature-generated title update, both thresholds must be met.
-                    Fresh turns start after the rename; the turn containing the rename does not
-                    count.
+                    Both requirements apply after each automatic update. New turns must start after
+                    that update.
                   </Text>
                 </View>
                 <View className="flex-row flex-wrap items-center gap-3">

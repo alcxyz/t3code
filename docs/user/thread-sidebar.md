@@ -77,21 +77,21 @@ agents update a thread's title when its objective meaningfully changes. Title up
 part of agent work; T3 Code does not generate them on a schedule. Snoozed, archived, and settled
 threads are skipped.
 
-Automatic updates use separate rules before and after the first feature rename:
+Automatic updates use separate rules before and after the first automatic update:
 
-| Profile            | Before the first feature rename      | After each feature rename                                                 |
+| Profile            | Before the first automatic update    | After each automatic update                                               |
 | ------------------ | ------------------------------------ | ------------------------------------------------------------------------- |
 | Often              | 30 minutes old and 3 completed turns | 15-minute cooldown and 1 fresh completed turn                             |
 | Balanced (default) | 2 hours old and 5 completed turns    | 45-minute cooldown and 2 fresh completed turns                            |
 | Rare               | 6 hours old and 10 completed turns   | 2-hour cooldown and 3 fresh completed turns                               |
 | Custom             | Your minimum age and completed turns | Your cooldown and fresh completed turns, with an optional rolling maximum |
 
-Both conditions in the applicable column must be met. After a successful feature rename, the
+Both conditions in the applicable column must be met. After a successful automatic update, the
 cooldown and fresh-turn count restart together; the initial age and total-turn thresholds no longer
 apply. Fresh turns must start after that rename and finish. The turn containing the rename, tool
 calls, and progress updates do not count as fresh turns.
 
-The initial title is still generated normally by T3 Code and does not start the feature cooldown.
+The initial title is still generated normally by T3 Code and does not start the update cooldown.
 Eligibility only lets the agent consider an update; the objective must still meaningfully change.
 Presets have no additional daily cap. Custom can limit total renames in a rolling window; existing
 Custom limits remain enabled until you turn them off.
