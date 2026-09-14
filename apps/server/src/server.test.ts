@@ -117,6 +117,7 @@ import {
 } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
+import { AutomaticThreadTitleRateLimit } from "./orchestration/AutomaticThreadTitleRateLimit.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStoreLive } from "./persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationEventStore } from "./persistence/Services/OrchestrationEventStore.ts";
@@ -937,6 +938,7 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(AutomaticThreadTitleRateLimit)({}),
           Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
             readEvents: () => Stream.empty,
             readThreadEvents: () => Stream.empty,

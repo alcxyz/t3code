@@ -192,5 +192,9 @@ export function buildCodexDeveloperInstructions(
       : codexDefaultModeDeveloperInstructions(browserToolsAvailable);
   return `${base}
 
-${buildRuntimeInstructions({ harness: "Codex", ...runtime })}`;
+${buildRuntimeInstructions({
+  harness: "Codex",
+  model: runtime.model,
+  reasoningEffort: runtime.reasoningEffort,
+})}`;
 }

@@ -33,6 +33,7 @@ export interface SettingsSearchItem {
   readonly localBackendManagementOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
+  readonly requiresAutomaticThreadTitles?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -42,6 +43,7 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
+  readonly hasAutomaticThreadTitles: boolean;
 }
 
 /**
@@ -161,6 +163,23 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Project grouping",
     to: "/settings/general",
     searchTerms: ["combine matching repositories environments sidebar"],
+  },
+  {
+    id: "automatic-thread-titles",
+    title: "Keep thread titles up to date",
+    to: "/settings/general",
+    searchTerms: ["agent automatic regenerate rename objective projects threads"],
+    requiresAutomaticThreadTitles: true,
+  },
+  {
+    id: "automatic-thread-title-frequency",
+    title: "Automatic title update policy",
+    to: "/settings/general",
+    targetId: "automatic-thread-titles",
+    searchTerms: [
+      "rename rate rare balanced often first recurring cooldown completed turns fresh turns eligibility projects threads",
+    ],
+    requiresAutomaticThreadTitles: true,
   },
   {
     id: "auto-settle-inactive-threads",
@@ -597,7 +616,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.requiresAutomaticThreadTitles || availability.hasAutomaticThreadTitles),
   );
 }
 

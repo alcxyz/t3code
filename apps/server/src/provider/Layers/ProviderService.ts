@@ -79,6 +79,12 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import {
+  AutomaticThreadTitleRateLimit,
+  hasAutomaticThreadTitleRenameQuota,
+} from "../../orchestration/AutomaticThreadTitleRateLimit.ts";
+import { allowsAutomaticThreadTitleUpdate } from "../../orchestration/ThreadTitlePolicy.ts";
+import { DEFAULT_THREAD_TITLE } from "../../orchestration/threadTitles.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -477,6 +483,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const projectionQuery = yield* Effect.serviceOption(
     ProjectionSnapshotQuery.ProjectionSnapshotQuery,
   );
+  const automaticThreadTitleRateLimit = yield* Effect.serviceOption(AutomaticThreadTitleRateLimit);
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const revokeMcpCredential =
@@ -853,65 +860,105 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     yield* recordCompletedTurnProperties(properties);
   });
   /**
-   * Attach the `t3-code` MCP server to the session that is about to start.
-   *
-   * This is the only place a credential is minted, so withholding one here is
-   * what disables agent browser access everywhere: every adapter already
-   * treats a missing session as "no MCP server", and the `/mcp` endpoint
-   * accepts nothing but tokens issued from this path.
-   */
-  /**
    * Deny on an unreadable settings file rather than letting the read failure
    * escape: adding `ServerSettingsError` to `ProviderServiceError` would widen
-   * a union every caller handles, for a branch that only decides whether one
-   * optional toolset is attached. Denying is the safe direction — an explicit
-   * "off" silently becoming "on" would violate the user's stated choice,
-   * whereas the reverse costs an agent one toolset and is visible immediately.
+   * a union every caller handles, for a branch that only decides which
+   * optional toolsets are attached.
    */
-  const agentBrowserAccessEnabled = Effect.fn("ProviderService.agentBrowserAccessEnabled")(
+  const resolveMcpTurnContext = Effect.fn("ProviderService.resolveMcpTurnContext")(
     function* (threadId: ThreadId) {
       const settings = yield* serverSettings.getSettings;
-      if (Object.keys(settings.projectAgentBrowserAccessOverrides).length === 0) {
-        return settings.enableAgentBrowserAccess;
-      }
-      // Provider-only runtimes may omit orchestration. An unresolved project
-      // must not bypass an explicit browser override.
-      if (Option.isNone(projectionQuery)) return false;
-      const thread = yield* projectionQuery.value.getThreadShellById(threadId);
-      if (Option.isNone(thread)) return false;
-      return resolveProjectAgentBrowserAccess(settings, thread.value.projectId);
+      const capabilities: Array<"preview" | "thread-title"> = [];
+
+      const needsThread =
+        settings.automaticThreadTitles ||
+        Object.keys(settings.projectAgentBrowserAccessOverrides).length > 0;
+      const thread =
+        needsThread && Option.isSome(projectionQuery)
+          ? yield* projectionQuery.value.getThreadShellById(threadId)
+          : Option.none();
+
+      const previewEnabled =
+        Object.keys(settings.projectAgentBrowserAccessOverrides).length === 0
+          ? settings.enableAgentBrowserAccess
+          : Option.isSome(thread) &&
+            resolveProjectAgentBrowserAccess(settings, thread.value.projectId);
+      const mcpEndpointRequired = settings.automaticThreadTitles || previewEnabled;
+
+      const automaticTitleLifecycleAllowsUpdates =
+        settings.automaticThreadTitles &&
+        Option.isSome(thread) &&
+        thread.value.titleState?.source === "generated" &&
+        thread.value.titleRegeneration == null &&
+        thread.value.title !== DEFAULT_THREAD_TITLE &&
+        allowsAutomaticThreadTitleUpdate(thread.value, yield* nowIso) &&
+        Option.isSome(automaticThreadTitleRateLimit);
+      const automaticTitleUpdatesAllowed = automaticTitleLifecycleAllowsUpdates
+        ? yield* hasAutomaticThreadTitleRenameQuota(threadId, settings).pipe(
+            Effect.provideService(
+              AutomaticThreadTitleRateLimit,
+              automaticThreadTitleRateLimit.value,
+            ),
+            Effect.catch((cause) =>
+              Effect.logWarning(
+                "Could not resolve automatic thread title quota; withholding title updates for this turn.",
+                { cause },
+              ).pipe(Effect.as(false)),
+            ),
+          )
+        : false;
+      if (automaticTitleUpdatesAllowed) capabilities.push("thread-title");
+
+      if (previewEnabled) capabilities.push("preview");
+
+      // A title-only credential does not grant preview access. Guidance is
+      // withheld unless the generated title state makes recurring updates eligible.
+      const currentThreadTitle =
+        automaticTitleUpdatesAllowed && Option.isSome(thread) ? thread.value.title : undefined;
+      const runtimeInstructions = {
+        browserToolsAvailable: capabilities.includes("preview"),
+        ...(currentThreadTitle ? { currentThreadTitle } : {}),
+      };
+      return { mcpEndpointRequired, capabilities, runtimeInstructions };
     },
     Effect.catch((cause) =>
       Effect.logWarning(
-        "Could not read server settings; withholding agent browser access for this session.",
+        "Could not resolve MCP capabilities; withholding optional agent tools for this session.",
         { cause },
-      ).pipe(Effect.as(false)),
+      ).pipe(
+        Effect.as({
+          mcpEndpointRequired: undefined,
+          capabilities: [] as Array<"preview" | "thread-title">,
+          runtimeInstructions: { browserToolsAvailable: false },
+        }),
+      ),
     ),
   );
 
+  const clearMcpSession = (threadId: ThreadId) =>
+    revokeMcpCredential(threadId).pipe(
+      Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
-      if (!(yield* agentBrowserAccessEnabled(threadId))) {
-        // Revoke as well as clear. Every other prepare path reaches
-        // `issueActiveMcpCredential`, which revokes the thread first, so
-        // skipping it here would leave a previously issued bearer token valid
-        // against `/mcp` for the rest of its liveness window — and later turns
-        // would keep refreshing it. A session restart (runtime mode, cwd,
-        // model) re-prepares without stopping, so it relies on this.
-        yield* revokeMcpCredential(threadId);
-        yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
-        return undefined;
+      const context = yield* resolveMcpTurnContext(threadId);
+      if (context.mcpEndpointRequired !== true) {
+        yield* clearMcpSession(threadId);
+        return { ...context, runtimeInstructions: undefined };
       }
-      const credential = yield* issueMcpCredential({ threadId, providerInstanceId });
+      // The endpoint must be present at process startup. Keep it attached when
+      // a configured feature is temporarily ineligible so a later turn can
+      // grant that capability without restarting the provider.
+      const credential = yield* issueMcpCredential({
+        threadId,
+        providerInstanceId,
+        capabilities: context.capabilities,
+      });
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
       }
-      return credential;
+      return credential ? context : { ...context, runtimeInstructions: undefined };
     });
-  const clearMcpSession = (threadId: ThreadId) =>
-    McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
-      Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
-    );
 
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Effect.succeed(event).pipe(
@@ -1191,7 +1238,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
-      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
+      const mcpContext = yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
       const resumed = yield* adapter
         .startSession({
           threadId: input.binding.threadId,
@@ -1201,6 +1248,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
+          ...(mcpContext.runtimeInstructions
+            ? { runtimeInstructions: mcpContext.runtimeInstructions }
+            : {}),
         })
         .pipe(Effect.onError(() => clearMcpSession(input.binding.threadId)));
       if (resumed.provider !== adapter.provider) {
@@ -1422,13 +1472,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
         yield* clearTurnAnalyticsSession(resolvedInstanceId, threadId);
-        yield* prepareMcpSession(threadId, resolvedInstanceId);
+        const mcpContext = yield* prepareMcpSession(threadId, resolvedInstanceId);
         const session = yield* adapter
           .startSession({
             ...input,
             providerInstanceId: resolvedInstanceId,
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
             ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
+            ...(mcpContext.runtimeInstructions
+              ? { runtimeInstructions: mcpContext.runtimeInstructions }
+              : {}),
           })
           .pipe(Effect.onError(() => clearMcpSession(threadId)));
 
@@ -1620,12 +1673,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "provider.kind": routed.adapter.provider,
         ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
       });
-      // A turn is the clearest sign a session is still alive. The MCP
-      // credential is minted once at session start and cannot be rotated into
-      // an already-spawned agent process, so we keep the existing token valid
-      // rather than issuing a new one: sessions that go a long time between
-      // browser tool calls used to lose the toolkit outright.
-      yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
+      const mcpContext = yield* resolveMcpTurnContext(input.threadId);
+      const hasMcpEndpoint =
+        McpProviderSession.readMcpProviderSession(input.threadId) !== undefined;
+      if (hasMcpEndpoint) {
+        // A turn is the clearest sign a session is still alive. The MCP
+        // credential is minted once at session start and cannot be rotated into
+        // an already-spawned process. Keep an existing endpoint dormant with
+        // zero capabilities while every feature is disabled or configuration
+        // cannot be resolved, so a later turn can restore grants in place.
+        yield* McpSessionRegistry.updateActiveMcpThreadCapabilities(
+          input.threadId,
+          mcpContext.capabilities,
+        );
+        yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
+      }
       const analyticsModelSelection =
         input.modelSelection?.instanceId === routed.instanceId ? input.modelSelection : undefined;
       const turn = yield* Effect.acquireUseRelease(
@@ -1639,7 +1701,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }),
         (turnMetadata) =>
           Effect.gen(function* () {
-            const turn = yield* routed.adapter.sendTurn(input);
+            const turn = yield* routed.adapter.sendTurn({
+              ...input,
+              ...(hasMcpEndpoint && mcpContext.runtimeInstructions
+                ? { runtimeInstructions: mcpContext.runtimeInstructions }
+                : {}),
+            });
             yield* associateTurnAnalytics({
               providerInstanceId: routed.instanceId,
               threadId: input.threadId,

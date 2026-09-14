@@ -102,6 +102,19 @@ On web and desktop, right-click a pull request link in a thread and choose
 same link to return to the branch PR, if one exists.
 The linked pull request participates in automatic settlement.
 
+## Keep titles current
+
+Enable **Keep thread titles up to date** under **Settings → General → Projects & threads**
+to let the agent update a generated title when the objective materially changes.
+Choose Rare, Balanced, or Often to control the required age, completed work, and
+spacing between updates. Balanced is the default; becoming eligible does not
+schedule a separate generation call.
+
+Manual titles remain protected. Initial naming and refinement keep their normal
+behavior, and snoozed, archived, or settled threads do not receive these updates.
+If a provider session started with both automatic titles and agent browser access
+disabled, automatic titles become available when a new provider session starts.
+
 ## Find and reference work
 
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads

@@ -43,6 +43,7 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
+import { resolveAutomaticThreadTitleRenameLimit } from "@t3tools/shared/serverSettings";
 import {
   filterSharedServerPatch,
   findSharedSettingsMismatches,
@@ -60,7 +61,10 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
-import { resolveAgentAwarenessPlatformPresentation } from "./SettingsRouteScreen.logic";
+import {
+  formatAutomaticTitleRenameLimitDescription,
+  resolveAgentAwarenessPlatformPresentation,
+} from "./SettingsRouteScreen.logic";
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
@@ -579,21 +583,26 @@ function GeneralSettingsSection() {
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
-      <AutoSettleSettingsRows />
+      <SharedThreadSettingsRows />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
     </SettingsSection>
   );
 }
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_SERVER_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
+const AUTOMATIC_TITLE_POLICY_OPTIONS = [
+  { value: "rare", label: "Rare", detail: "First 360m + 10 turns; then 120m + 3" },
+  { value: "balanced", label: "Balanced", detail: "First 120m + 5 turns; then 45m + 2" },
+  { value: "often", label: "Often", detail: "First 30m + 3 turns; then 15m + 1" },
+] as const;
 
 /**
- * Auto-settlement is a user preference that every server has to hold. Mobile
- * has no primary environment, so the first eligible sync target provides the
- * reference value. Edits fan out to every eligible target, and a mismatch row
- * lets the user push the reference out.
+ * These user preferences must be available to every server that can act on
+ * them. Mobile has no primary environment, so the first eligible sync target
+ * provides the reference value. Edits fan out to every eligible target, and a
+ * mismatch row lets the user push the reference out.
  */
-function AutoSettleSettingsRows() {
+function SharedThreadSettingsRows() {
   const { environments } = useEnvironments();
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: "server settings update",
@@ -603,6 +612,11 @@ function AutoSettleSettingsRows() {
   const syncTargets = environments.filter(supportsSharedSettingsSync);
   const reference = syncTargets[0] ?? null;
   const referenceSettings = reference?.serverConfig?.settings ?? null;
+  const titleTargets = syncTargets.filter(
+    (environment) =>
+      environment.serverConfig?.environment.capabilities.automaticThreadTitles === true,
+  );
+  const titleReferenceSettings = titleTargets[0]?.serverConfig?.settings ?? null;
 
   const [daysDraft, setDaysDraft] = useState<string | null>(null);
 
@@ -612,6 +626,12 @@ function AutoSettleSettingsRows() {
 
   const writeToAll = (patch: ServerSettingsPatch) => {
     for (const environment of syncTargets) {
+      void updateSettings({ environmentId: environment.environmentId, input: { patch } });
+    }
+  };
+
+  const writeTitleSettingsToAll = (patch: ServerSettingsPatch) => {
+    for (const environment of titleTargets) {
       void updateSettings({ environmentId: environment.environmentId, input: { patch } });
     }
   };
@@ -630,6 +650,9 @@ function AutoSettleSettingsRows() {
   });
 
   const afterDays = referenceSettings.sidebarAutoSettleAfterDays;
+  const titleRenameLimit = titleReferenceSettings
+    ? resolveAutomaticThreadTitleRenameLimit(titleReferenceSettings)
+    : null;
   const commitDays = () => {
     const draft = (daysDraft ?? "").trim();
     setDaysDraft(null);
@@ -648,6 +671,53 @@ function AutoSettleSettingsRows() {
 
   return (
     <>
+      {titleReferenceSettings ? (
+        <>
+          <SettingsSwitchRow
+            icon="textformat.size"
+            label="Keep thread titles up to date"
+            subtitle="Agents update titles for meaningful objective changes. Snoozed, archived, and settled threads are skipped; manual titles stay protected."
+            value={titleReferenceSettings.automaticThreadTitles}
+            onValueChange={(value) => writeTitleSettingsToAll({ automaticThreadTitles: value })}
+          />
+          {titleReferenceSettings.automaticThreadTitles && titleRenameLimit ? (
+            <View className="gap-3 border-t border-border-subtle p-4">
+              <View className="gap-1">
+                <Text className="text-lg text-foreground">Automatic title update frequency</Text>
+                <Text className="text-sm leading-normal text-foreground-muted">
+                  {formatAutomaticTitleRenameLimitDescription(titleRenameLimit)}
+                </Text>
+              </View>
+              <View className="flex-row flex-wrap gap-2">
+                {AUTOMATIC_TITLE_POLICY_OPTIONS.map((option) => {
+                  const selected =
+                    titleReferenceSettings.automaticThreadTitleRenamePolicy === option.value;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      onPress={() =>
+                        writeTitleSettingsToAll({
+                          automaticThreadTitleRenamePolicy: option.value,
+                        })
+                      }
+                      className={
+                        selected
+                          ? "min-w-[46%] flex-1 rounded-xl border-2 border-primary bg-subtle px-3 py-2"
+                          : "min-w-[46%] flex-1 rounded-xl border border-border bg-card px-3 py-2"
+                      }
+                    >
+                      <Text className="text-base text-foreground">{option.label}</Text>
+                      <Text className="text-sm text-foreground-muted">{option.detail}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+        </>
+      ) : null}
       <SettingsSwitchRow
         icon="arrow.triangle.branch"
         label="Auto-settle merged threads"

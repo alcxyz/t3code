@@ -455,6 +455,27 @@ describe("ServerSettings thread settlement", () => {
   });
 });
 
+describe("ServerSettings automatic thread titles", () => {
+  it("defaults frequency to balanced and accepts preset patches", () => {
+    expect(decodeServerSettings({}).automaticThreadTitleRenamePolicy).toBe("balanced");
+    const patch = { automaticThreadTitleRenamePolicy: "often" as const };
+    expect(decodeServerSettingsPatch(patch)).toEqual(patch);
+  });
+
+  it("rejects an unknown frequency preset", () => {
+    const patch = { automaticThreadTitleRenamePolicy: "custom" };
+    expect(() => decodeServerSettings(patch)).toThrow();
+    expect(() => decodeServerSettingsPatch(patch)).toThrow();
+  });
+
+  it("is opt-in and accepts server-authoritative updates", () => {
+    expect(decodeServerSettings({}).automaticThreadTitles).toBe(false);
+    expect(decodeServerSettingsPatch({ automaticThreadTitles: true }).automaticThreadTitles).toBe(
+      true,
+    );
+  });
+});
+
 describe("ClientSettings pull request merge methods", () => {
   it("defaults to no project overrides and accepts supported methods", () => {
     expect(decodeClientSettings({}).pullRequestMergeMethodOverrides).toEqual({});

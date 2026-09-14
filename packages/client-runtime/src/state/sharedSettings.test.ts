@@ -17,7 +17,10 @@ import {
 const primaryId = EnvironmentId.make("env-primary");
 const laptopId = EnvironmentId.make("env-laptop");
 const boxId = EnvironmentId.make("env-box");
-const restartCapabilities = { threadRestartContinuation: true };
+const restartCapabilities = {
+  automaticThreadTitles: true,
+  threadRestartContinuation: true,
+};
 
 describe("supportsSharedSettingsSync", () => {
   it("accepts only connected servers that advertise the shared-settings capability", () => {
@@ -86,6 +89,8 @@ describe("splitSharedServerPatch", () => {
 
   it("routes preference keys to the shared patch and machine keys to the local patch", () => {
     const { sharedPatch, localPatch } = splitSharedServerPatch({
+      automaticThreadTitles: true,
+      automaticThreadTitleRenamePolicy: "often",
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
@@ -94,6 +99,8 @@ describe("splitSharedServerPatch", () => {
       newWorktreesStartFromOrigin: true,
     });
     expect(sharedPatch).toEqual({
+      automaticThreadTitles: true,
+      automaticThreadTitleRenamePolicy: "often",
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
@@ -111,6 +118,8 @@ describe("pickSharedServerSettings", () => {
     expect(
       Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
     ).toEqual([
+      "automaticThreadTitleRenamePolicy",
+      "automaticThreadTitles",
       "continueThreadsAfterServerUpdate",
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
@@ -122,6 +131,62 @@ describe("pickSharedServerSettings", () => {
 });
 
 describe("filterSharedServerPatch", () => {
+  it.each([true, false])(
+    "syncs automatic title preference %s only to servers with support",
+    (automaticThreadTitles) => {
+      const patch = {
+        automaticThreadTitles,
+        automaticThreadTitleRenamePolicy: "often" as const,
+        sidebarAutoSettleOnMerge: false,
+      };
+
+      expect(filterSharedServerPatch(patch, { threadRestartContinuation: true })).toEqual({
+        sidebarAutoSettleOnMerge: false,
+      });
+      expect(filterSharedServerPatch(patch, restartCapabilities)).toEqual(patch);
+      expect(
+        pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, {
+          threadRestartContinuation: true,
+        }),
+      ).not.toHaveProperty("automaticThreadTitles");
+      expect(
+        pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, {
+          threadRestartContinuation: true,
+        }),
+      ).not.toHaveProperty("automaticThreadTitleRenamePolicy");
+    },
+  );
+
+  it("ignores automatic title drift on older servers", () => {
+    const primarySettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      automaticThreadTitleRenamePolicy: "often" as const,
+    };
+    const olderServer = {
+      environmentId: laptopId,
+      label: "Older laptop",
+      syncEligible: true,
+      settings: DEFAULT_SERVER_SETTINGS,
+      capabilities: { threadRestartContinuation: true },
+    };
+    const supportedServer = {
+      environmentId: boxId,
+      label: "Remote box",
+      syncEligible: true,
+      settings: DEFAULT_SERVER_SETTINGS,
+      capabilities: restartCapabilities,
+    };
+
+    expect(
+      findSharedSettingsMismatches({
+        primaryEnvironmentId: primaryId,
+        primarySettings,
+        primaryCapabilities: restartCapabilities,
+        environments: [olderServer, supportedServer],
+      }),
+    ).toEqual([{ environmentId: boxId, label: "Remote box" }]);
+  });
+
   it.each([true, false])(
     "resets a disabled default provider only on the originating environment (%s)",
     (targetIsSource) => {

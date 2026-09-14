@@ -24,6 +24,39 @@ import {
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownOption(ServerSettingsJson);
 
+export function resolveAutomaticThreadTitleRenameLimit(
+  settings: Pick<ServerSettings, "automaticThreadTitleRenamePolicy">,
+): {
+  minAgeMinutes: number;
+  minCompletedTurns: number;
+  cooldownMinutes: number;
+  minFreshTurns: number;
+} {
+  switch (settings.automaticThreadTitleRenamePolicy) {
+    case "rare":
+      return {
+        minAgeMinutes: 360,
+        minCompletedTurns: 10,
+        cooldownMinutes: 120,
+        minFreshTurns: 3,
+      };
+    case "balanced":
+      return {
+        minAgeMinutes: 120,
+        minCompletedTurns: 5,
+        cooldownMinutes: 45,
+        minFreshTurns: 2,
+      };
+    case "often":
+      return {
+        minAgeMinutes: 30,
+        minCompletedTurns: 3,
+        cooldownMinutes: 15,
+        minFreshTurns: 1,
+      };
+  }
+}
+
 export function resolveProjectAgentBrowserAccess(
   settings: Pick<ServerSettings, "enableAgentBrowserAccess" | "projectAgentBrowserAccessOverrides">,
   projectId: ProjectId,

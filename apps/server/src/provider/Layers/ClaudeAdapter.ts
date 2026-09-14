@@ -37,7 +37,6 @@ import {
   ProviderItemId,
   type ProviderRuntimeEvent,
   type ProviderRuntimeTurnStatus,
-  type ProviderSendTurnInput,
   type ProviderSession,
   type ThreadTokenUsageSnapshot,
   type TurnTokenUsage,
@@ -86,7 +85,7 @@ import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
-import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import { buildRuntimeInstructions, buildThreadTitleInstructions } from "../RuntimeInstructions.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
@@ -108,6 +107,7 @@ import {
   type ProviderAdapterError,
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
+import type { ProviderAdapterSendTurnInput } from "../Services/ProviderAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -1420,7 +1420,7 @@ const CLAUDE_SETTING_SOURCES = [
 ] as const satisfies ReadonlyArray<SettingSource>;
 
 function buildPromptText(
-  input: ProviderSendTurnInput,
+  input: ProviderAdapterSendTurnInput,
   boundInstanceId: ProviderInstanceId,
   catalog: ClaudeModelCatalog,
 ): string {
@@ -1465,7 +1465,7 @@ function buildClaudeImageContentBlock(input: {
 }
 
 const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
-  input: ProviderSendTurnInput,
+  input: ProviderAdapterSendTurnInput,
   dependencies: {
     readonly fileSystem: FileSystem.FileSystem;
     readonly attachmentsDir: string;
@@ -1477,6 +1477,12 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
 ) {
   const text = buildPromptText(input, dependencies.boundInstanceId, dependencies.modelCatalog);
   const sdkContent: Array<Record<string, unknown>> = [];
+  const titleInstructions = buildThreadTitleInstructions(
+    input.runtimeInstructions?.currentThreadTitle,
+  );
+  if (titleInstructions) {
+    sdkContent.push({ type: "text", text: titleInstructions });
+  }
 
   // Claude Code expands a skill only from the LAST text block, and only when
   // `/name` is its first character. A `$skill` chip anywhere in the prompt is

@@ -9,6 +9,7 @@ import {
   type DesktopUpdateChannel,
   ProviderDriverKind,
   type ProviderInstanceId,
+  type ServerSettings,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
@@ -42,6 +43,7 @@ import {
   type QuitConfirmationMode,
 } from "@t3tools/contracts/settings";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { resolveAutomaticThreadTitleRenameLimit } from "@t3tools/shared/serverSettings";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
@@ -177,6 +179,14 @@ const TIMESTAMP_FORMAT_LABELS = {
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
   split: "Split",
+};
+
+type AutomaticThreadTitleRenamePolicy = ServerSettings["automaticThreadTitleRenamePolicy"];
+
+const AUTOMATIC_TITLE_POLICY_LABELS: Record<AutomaticThreadTitleRenamePolicy, string> = {
+  rare: "Rare · first 360 min + 10 turns; then 120 min + 3 turns",
+  balanced: "Balanced · first 120 min + 5 turns; then 45 min + 2 turns",
+  often: "Often · first 30 min + 3 turns; then 15 min + 1 turn",
 };
 
 const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
@@ -523,6 +533,13 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
+      ...(settings.automaticThreadTitles !== DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles
+        ? ["Keep thread titles up to date"]
+        : []),
+      ...(settings.automaticThreadTitleRenamePolicy !==
+      DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy
+        ? ["Automatic title update frequency"]
+        : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
@@ -626,6 +643,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
+      settings.automaticThreadTitles,
+      settings.automaticThreadTitleRenamePolicy,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
@@ -714,6 +733,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+      automaticThreadTitles: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles,
+      automaticThreadTitleRenamePolicy: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
@@ -2017,8 +2038,10 @@ export function GeneralSettingsPanel() {
   );
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
-  const supportsAutoSettlement =
-    useAtomValue(primaryServerConfigAtom)?.environment.capabilities.threadAutoSettlement === true;
+  const primaryCapabilities = useAtomValue(primaryServerConfigAtom)?.environment.capabilities;
+  const supportsAutoSettlement = primaryCapabilities?.threadAutoSettlement === true;
+  const supportsAutomaticThreadTitles = primaryCapabilities?.automaticThreadTitles === true;
+  const automaticTitleRenameLimit = resolveAutomaticThreadTitleRenameLimit(settings);
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -2532,6 +2555,91 @@ export function GeneralSettingsPanel() {
             </Button>
           }
         />
+
+        {supportsAutomaticThreadTitles ? (
+          <>
+            <SettingsRow
+              serverScoped
+              {...searchableSetting("automatic-thread-titles")}
+              description="Agents update titles when the objective meaningfully changes. Snoozed, archived, and settled threads are skipped, and manually chosen titles stay protected."
+              resetAction={
+                settings.automaticThreadTitles !==
+                DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles ? (
+                  <SettingResetButton
+                    label="automatic thread titles"
+                    onClick={() =>
+                      updateSettings({
+                        automaticThreadTitles: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.automaticThreadTitles}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ automaticThreadTitles: Boolean(checked) })
+                  }
+                  aria-label="Keep thread titles up to date"
+                />
+              }
+            />
+
+            {settings.automaticThreadTitles ? (
+              <SettingsRow
+                serverScoped
+                {...searchableSetting("automatic-thread-title-frequency")}
+                description={`First update: ${automaticTitleRenameLimit.minAgeMinutes} minutes old and ${automaticTitleRenameLimit.minCompletedTurns} completed ${automaticTitleRenameLimit.minCompletedTurns === 1 ? "turn" : "turns"}. Later updates: ${automaticTitleRenameLimit.cooldownMinutes} minutes and ${automaticTitleRenameLimit.minFreshTurns} new completed ${automaticTitleRenameLimit.minFreshTurns === 1 ? "turn" : "turns"}.`}
+                resetAction={
+                  settings.automaticThreadTitleRenamePolicy !==
+                  DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy ? (
+                    <SettingResetButton
+                      label="automatic title update frequency"
+                      onClick={() =>
+                        updateSettings({
+                          automaticThreadTitleRenamePolicy:
+                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy,
+                        })
+                      }
+                    />
+                  ) : null
+                }
+                control={
+                  <Select
+                    value={settings.automaticThreadTitleRenamePolicy}
+                    onValueChange={(value) => {
+                      if (value === "rare" || value === "balanced" || value === "often") {
+                        updateSettings({ automaticThreadTitleRenamePolicy: value });
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      size="sm"
+                      className="w-full sm:w-96"
+                      aria-label="Automatic title update frequency"
+                    >
+                      <SelectValue>
+                        {AUTOMATIC_TITLE_POLICY_LABELS[settings.automaticThreadTitleRenamePolicy]}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      {(
+                        Object.entries(AUTOMATIC_TITLE_POLICY_LABELS) as Array<
+                          [AutomaticThreadTitleRenamePolicy, string]
+                        >
+                      ).map(([value, label]) => (
+                        <SelectItem key={value} hideIndicator value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                }
+              />
+            ) : null}
+          </>
+        ) : null}
 
         <SettingsRow
           serverScoped

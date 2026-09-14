@@ -300,7 +300,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     ).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("persists and broadcasts thread settlement settings", () =>
+  it.effect("persists and broadcasts shared thread preferences", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const serverConfig = yield* ServerConfig.ServerConfig;
@@ -309,6 +309,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         const changes = yield* serverSettings.subscribeChanges;
 
         const next = yield* serverSettings.updateSettings({
+          automaticThreadTitles: true,
           sidebarAutoSettleAfterDays: null,
           sidebarAutoSettleOnMerge: false,
         });
@@ -318,10 +319,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         // @effect-diagnostics-next-line preferSchemaOverJson:off
         const persisted = JSON.parse(raw) as Record<string, unknown>;
 
+        assert.isTrue(next.automaticThreadTitles);
         assert.strictEqual(next.sidebarAutoSettleAfterDays, null);
         assert.isFalse(next.sidebarAutoSettleOnMerge);
+        assert.isTrue(change?.automaticThreadTitles);
         assert.strictEqual(change?.sidebarAutoSettleAfterDays, null);
         assert.isFalse(change?.sidebarAutoSettleOnMerge);
+        assert.isTrue(persisted.automaticThreadTitles);
         assert.strictEqual(persisted.sidebarAutoSettleAfterDays, null);
         assert.isFalse(persisted.sidebarAutoSettleOnMerge);
       }),

@@ -1339,6 +1339,14 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadTitleAutomaticUpdateCommand = Schema.Struct({
+  type: Schema.Literal("thread.title.automatic.update"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  expectedVersion: CommandId,
+  title: TrimmedNonEmptyString,
+});
+
 const ThreadTitleGenerateCompleteCommand = Schema.Struct({
   type: Schema.Literal("thread.title.generate.complete"),
   commandId: CommandId,
@@ -1392,6 +1400,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
+  ThreadTitleAutomaticUpdateCommand,
   ThreadTitleGenerateCompleteCommand,
   ThreadTitleRefineCommand,
   ThreadPullRequestSyncCommand,
