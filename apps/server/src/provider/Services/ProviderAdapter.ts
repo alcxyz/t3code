@@ -65,7 +65,7 @@ export interface ProviderThreadSnapshot {
 }
 
 export interface ProviderRuntimeInstructionsContext {
-  readonly browserToolsAvailable: boolean;
+  readonly browserToolsAvailable: boolean | { readonly browser: boolean; readonly device: boolean };
   readonly currentThreadTitle?: string;
 }
 

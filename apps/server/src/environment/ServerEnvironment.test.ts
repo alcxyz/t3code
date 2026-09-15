@@ -54,6 +54,8 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
+    otlpHeaders: undefined,
+    otlpProtocol: "http/json",
     cwd: process.cwd(),
     baseDir,
     mode: "web",
@@ -172,6 +174,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.threadTitleRestore).toBe(true);
       expect(second.capabilities.automaticThreadTitles).toBe(true);
       expect(second.capabilities.threadTitleUpdates).toBe(true);
+      expect(second.capabilities.threadPullRequests).toBe(true);
       expect(second.capabilities.threadPullRequestLinking).toBe(true);
       expect(second.capabilities.agentActivityPublishing).toBe(false);
     }),

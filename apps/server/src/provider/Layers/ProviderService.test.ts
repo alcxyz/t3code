@@ -86,7 +86,6 @@ import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { AutomaticThreadTitleRateLimit } from "../../orchestration/AutomaticThreadTitleRateLimit.ts";
-import type * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -1664,6 +1663,9 @@ routing.layer("ProviderServiceLive routing", (it) => {
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
+      const modelSelection = createModelSelection(codexInstanceId, "gpt-5.6-sol", [
+        { id: "reasoningEffort", value: "high" },
+      ]);
 
       const session = yield* provider.startSession(asThreadId("thread-1"), {
         provider: ProviderDriverKind.make("codex"),
@@ -1681,6 +1683,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         threadId: session.threadId,
         input: "hello",
         attachments: [],
+        modelSelection,
       });
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
 
@@ -1718,6 +1721,21 @@ routing.layer("ProviderServiceLive routing", (it) => {
         numTurns: 0,
       });
 
+      const rewindCursor = { threadId: "rewound-provider-thread" };
+      routing.codex.updateSession(session.threadId, (session) => ({
+        ...session,
+        resumeCursor: rewindCursor,
+      }));
+      yield* provider.rollbackConversation({ threadId: session.threadId, numTurns: 1 });
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const rewoundBinding = yield* directory.getBinding(session.threadId);
+      assert(Option.isSome(rewoundBinding));
+      assert.deepEqual(rewoundBinding.value.resumeCursor, rewindCursor);
+      assert.deepEqual(
+        (rewoundBinding.value.runtimePayload as { modelSelection?: unknown }).modelSelection,
+        modelSelection,
+      );
+
       yield* provider.stopSession({ threadId: session.threadId });
       routing.codex.startSession.mockClear();
       routing.codex.sendTurn.mockClear();
@@ -1737,13 +1755,90 @@ routing.layer("ProviderServiceLive routing", (it) => {
           cwd?: string;
           resumeCursor?: unknown;
           threadId?: string;
+          modelSelection?: unknown;
         };
         assert.equal(startPayload.provider, "codex");
         assert.equal(startPayload.cwd, fixtureCwd("project"));
-        assert.deepEqual(startPayload.resumeCursor, session.resumeCursor);
+        assert.deepEqual(startPayload.resumeCursor, rewindCursor);
+        assert.deepEqual(startPayload.modelSelection, modelSelection);
         assert.equal(startPayload.threadId, session.threadId);
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+    }),
+  );
+
+  it.effect("preserves background turn boundaries when stopping before rollback recovery", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-background-rewind");
+      const initial = yield* provider.startSession(threadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const cursor = {
+        resume: "550e8400-e29b-41d4-a716-446655440010",
+        turnCount: 2,
+        turnStartMessageIds: ["user-prompt", "background-assistant"],
+      };
+      routing.claude.updateSession(threadId, (session) => ({ ...session, resumeCursor: cursor }));
+      const completed = yield* provider.streamEvents.pipe(
+        Stream.filter((event) => event.eventId === "evt-background-rewind"),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      routing.claude.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-background-rewind"),
+        provider: CLAUDE_AGENT_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("background-turn"),
+        payload: { state: "completed" },
+      });
+      yield* Fiber.join(completed);
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const binding = yield* directory.getBinding(threadId);
+      assert(Option.isSome(binding));
+      assert.deepEqual(binding.value.resumeCursor, cursor);
+      yield* provider.stopSession({ threadId });
+      routing.claude.startSession.mockClear();
+      yield* provider.rollbackConversation({ threadId, numTurns: 1 });
+      assert.deepEqual(routing.claude.startSession.mock.calls[0]?.[0].resumeCursor, cursor);
+
+      const replacement = yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      routing.claude.listSessions.mockReturnValueOnce(
+        Effect.succeed([{ ...initial, resumeCursor: cursor }]),
+      );
+      const staleCompleted = yield* provider.streamEvents.pipe(
+        Stream.filter((event) => event.eventId === "evt-stale-background-rewind"),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      routing.claude.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-stale-background-rewind"),
+        provider: CLAUDE_AGENT_DRIVER,
+        createdAt: "2026-01-01T00:00:01.000Z",
+        threadId,
+        turnId: asTurnId("old-background-turn"),
+        payload: { state: "completed" },
+      });
+      yield* Fiber.join(staleCompleted);
+      const replacementBinding = yield* directory.getBinding(threadId);
+      assert(Option.isSome(replacementBinding));
+      assert.equal(replacementBinding.value.providerInstanceId, codexInstanceId);
+      assert.deepEqual(replacementBinding.value.resumeCursor, replacement.resumeCursor);
     }),
   );
 
@@ -2141,6 +2236,25 @@ routing.layer("ProviderServiceLive routing", (it) => {
       const fileOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
       assert.include(fileOnlyInput.input ?? "", '[Attached file "report.pdf" is saved at: ');
       assert.deepEqual(fileOnlyInput.attachments, [fileAttachment]);
+
+      const pastedTextAttachment = {
+        type: "file" as const,
+        id: "thread-attach-12345678-1234-1234-1234-123456789abc-txt",
+        name: "pasted-text.txt",
+        mimeType: "text/plain;charset=utf-8",
+        sizeBytes: 32_768,
+        source: { _tag: "pasted-text" as const },
+      };
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input: "Investigate this crash",
+        attachments: [pastedTextAttachment],
+      });
+      const pastedInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.include(pastedInput.input ?? "", '[Pasted text "pasted-text.txt" is saved at: ');
+      assert.include(pastedInput.input ?? "", ". Inspect it as needed.]");
+      assert.deepEqual(pastedInput.attachments, [pastedTextAttachment]);
 
       yield* provider.stopSession({ threadId: session.threadId });
     }),
@@ -4597,6 +4711,33 @@ turnAnalytics.layer("ProviderServiceLive turn analytics", (it) => {
 
 const validation = makeProviderServiceLayer();
 validation.layer("ProviderServiceLive validation", (it) => {
+  it.effect("rejects input that leaves no room for pasted-text attachment context", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const attachment = {
+        type: "file" as const,
+        id: "thread-attach-12345678-1234-1234-1234-123456789abc-txt",
+        name: "pasted-text.txt",
+        mimeType: "text/plain;charset=utf-8",
+        sizeBytes: 32_768,
+        source: { _tag: "pasted-text" as const },
+      };
+      validation.codex.sendTurn.mockClear();
+
+      const failure = yield* provider
+        .sendTurn({
+          threadId: asThreadId("thread-pasted-text-context-limit"),
+          input: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS),
+          attachments: [attachment],
+        })
+        .pipe(Effect.flip);
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(PROVIDER_SEND_TURN_MAX_INPUT_CHARS));
+      assert.equal(validation.codex.sendTurn.mock.calls.length, 0);
+    }),
+  );
+
   it.effect("rejects citation-expanded input over the provider character limit", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
@@ -4807,13 +4948,12 @@ boundedListing.layer("ProviderServiceLive session listing", (it) => {
 const decodeBrowserAccessThreadShell = Schema.decodeUnknownEffect(OrchestrationThreadShell);
 
 describe("provider MCP capabilities", () => {
-  const revokedThreads: Array<ThreadId> = [];
   const projectId = ProjectId.make("project-browser-access");
 
   const startSessionWith = (
-    enableAgentBrowserAccess: boolean,
+    access: boolean | { readonly browser: boolean; readonly device: boolean },
     threadId: ThreadId,
-    projectOverride?: boolean,
+    projectOverride?: boolean | { readonly browser?: boolean; readonly device?: boolean },
     automaticThreadTitles = false,
     titleStateSource: "generated" | "manual" | null = "generated",
     sendTurn: boolean | number = false,
@@ -4832,10 +4972,13 @@ describe("provider MCP capabilities", () => {
     testOptions: {
       readonly settingsLookupFailuresAfterStart?: number;
       readonly stopSessionAfterTurns?: boolean;
+      readonly withoutOrchestration?: boolean;
     } = {},
   ) =>
     Effect.gen(function* () {
-      const issued: Array<McpSessionRegistry.McpCredentialRequest> = [];
+      const enableAgentBrowserAccess = typeof access === "boolean" ? access : access.browser;
+      const enableAgentDeviceAccess = typeof access === "boolean" ? access : access.device;
+      const issued: Array<{ threadId: ThreadId; capabilities: ReadonlyArray<string> }> = [];
       let sessionStarted = false;
       let remainingThreadLookupFailures = threadLookupFailuresAfterStart;
       let remainingSettingsLookupFailures = testOptions.settingsLookupFailuresAfterStart ?? 0;
@@ -4859,6 +5002,7 @@ describe("provider MCP capabilities", () => {
         getTurnStartMessage: () => Effect.die("unused"),
         getImportedAgentSessionSources: () => Effect.die("unused"),
         getUserInputActivity: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.die("unused"),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
@@ -4867,6 +5011,7 @@ describe("provider MCP capabilities", () => {
         getCounts: () => Effect.die("unused"),
         getEventReplayStats: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () => Effect.die("unused"),
+        getProjectShells: () => Effect.die("unused"),
         getProjectShellById: () => Effect.die("unused"),
         getFirstActiveThreadIdByProjectId: () => Effect.die("unused"),
         getThreadCheckpointContext: () => Effect.die("unused"),
@@ -4917,9 +5062,23 @@ describe("provider MCP capabilities", () => {
       });
       const baseSettingsLayer = ServerSettings.ServerSettingsService.layerTest({
         enableAgentBrowserAccess,
+        enableAgentDeviceAccess,
         automaticThreadTitles,
-        projectAgentBrowserAccessOverrides:
-          projectOverride === undefined ? {} : { [projectId]: projectOverride },
+        projectSettingsOverrides:
+          projectOverride === undefined
+            ? {}
+            : typeof projectOverride === "boolean"
+              ? { [projectId]: { enableAgentBrowserAccess: projectOverride } }
+              : {
+                  [projectId]: {
+                    ...(projectOverride.browser !== undefined
+                      ? { enableAgentBrowserAccess: projectOverride.browser }
+                      : {}),
+                    ...(projectOverride.device !== undefined
+                      ? { enableAgentDeviceAccess: projectOverride.device }
+                      : {}),
+                  },
+                },
       });
       const settingsLayer =
         remainingSettingsLookupFailures === 0
@@ -4948,7 +5107,8 @@ describe("provider MCP capabilities", () => {
       const providerLayer = makeProviderServiceLive({
         issueMcpCredential: (request) =>
           Effect.sync(() => {
-            issued.push(request);
+            const capabilities = [...request.capabilities].toSorted();
+            issued.push({ threadId: request.threadId, capabilities });
             return {
               config: {
                 environmentId: EnvironmentId.make("environment-mcp-capabilities"),
@@ -4957,14 +5117,14 @@ describe("provider MCP capabilities", () => {
                 providerInstanceId: request.providerInstanceId,
                 endpoint: "http://127.0.0.1:3000/mcp",
                 authorizationHeader: "Bearer test-token",
+                capabilities: request.capabilities,
               },
             };
           }),
-        revokeMcpCredential: (revoked) => Effect.sync(() => void revokedThreads.push(revoked)),
       }).pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(projectionLayer),
+        Layer.provide(testOptions.withoutOrchestration ? Layer.empty : projectionLayer),
         Layer.provide(
           Layer.succeed(
             AutomaticThreadTitleRateLimit,
@@ -5030,38 +5190,54 @@ describe("provider MCP capabilities", () => {
       return { issued, codex, isTitleRenameAvailable, ...markerState };
     });
 
-  it.effect("does not attach MCP when both optional features are off", () =>
+  // The capability on the credential is the observable that matters: a session
+  // always gets a credential (the pull request toolkit is never withheld), and
+  // `preview` on it is what actually grants or denies the browser tools.
+  it.effect("issues a credential without preview when agent browser access is off", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-browser-off");
-      revokedThreads.length = 0;
-      const { issued, codex } = yield* startSessionWith(false, threadId);
 
-      assert.deepEqual(issued, []);
-      assert.deepEqual(revokedThreads, [threadId]);
-      const startInput = codex.startSession.mock.calls[0]?.[0] as
-        | ProviderAdapterSessionStartInput
-        | undefined;
-      assert.equal(startInput?.runtimeInstructions, undefined);
+      const { issued } = yield* startSessionWith(false, threadId);
+
+      assert.deepEqual(issued, [{ threadId, capabilities: ["pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("requests an MCP credential when agent browser access is on", () =>
+  it.effect("issues a credential with preview when agent browser access is on", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-browser-on");
 
       const { issued } = yield* startSessionWith(true, threadId);
 
-      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      assert.deepEqual(issued, [
+        { threadId, capabilities: ["device", "preview", "pull-requests"] },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("withholds and revokes MCP credentials when the project disables browser access", () =>
+  it.effect("drops only the preview capability when browser access alone is off", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-browser-off-device-on");
+
+      const { issued } = yield* startSessionWith({ browser: false, device: true }, threadId);
+
+      assert.deepEqual(issued, [{ threadId, capabilities: ["device", "pull-requests"] }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("issues a credential without preview when the project disables browser access", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-off");
-      revokedThreads.length = 0;
+      const { issued } = yield* startSessionWith({ browser: true, device: false }, threadId, false);
+      assert.deepEqual(issued, [{ threadId, capabilities: ["pull-requests"] }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("a project browser override leaves device access alone", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-project-browser-off-device-on");
       const { issued } = yield* startSessionWith(true, threadId, false);
-      assert.deepEqual(issued, []);
-      assert.deepEqual(revokedThreads, [threadId]);
+      assert.deepEqual(issued, [{ threadId, capabilities: ["device", "pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5069,7 +5245,7 @@ describe("provider MCP capabilities", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-on");
       const { issued } = yield* startSessionWith(false, threadId, true);
-      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      assert.deepEqual(issued, [{ threadId, capabilities: ["preview", "pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5083,7 +5259,7 @@ describe("provider MCP capabilities", () => {
         true,
       );
 
-      assert.deepEqual(issued[0]?.capabilities, ["thread-title"]);
+      assert.deepEqual(issued[0]?.capabilities, ["pull-requests", "thread-title"]);
       assert.deepEqual(isTitleRenameAvailable.mock.calls, [
         [
           threadId,
@@ -5100,7 +5276,7 @@ describe("provider MCP capabilities", () => {
         | ProviderAdapterSessionStartInput
         | undefined;
       assert.deepEqual(startInput?.runtimeInstructions, {
-        browserToolsAvailable: false,
+        browserToolsAvailable: { browser: false, device: false },
         currentThreadTitle: "Browser access test",
       });
     }).pipe(Effect.provide(NodeServices.layer)),
@@ -5121,11 +5297,13 @@ describe("provider MCP capabilities", () => {
         false,
       );
 
-      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      assert.deepEqual(issued[0]?.capabilities, ["device", "preview", "pull-requests"]);
       const startInput = codex.startSession.mock.calls[0]?.[0] as
         | ProviderAdapterSessionStartInput
         | undefined;
-      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+      assert.deepEqual(startInput?.runtimeInstructions, {
+        browserToolsAvailable: { browser: true, device: true },
+      });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5146,17 +5324,19 @@ describe("provider MCP capabilities", () => {
         "Browser access test",
       );
 
-      assert.deepEqual(issued[0]?.capabilities, []);
+      assert.deepEqual(issued[0]?.capabilities, ["pull-requests"]);
       assert.equal(isTitleRenameAvailable.mock.calls.length, 1);
       const startInput = codex.startSession.mock.calls[0]?.[0] as
         | ProviderAdapterSessionStartInput
         | undefined;
-      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: false });
+      assert.deepEqual(startInput?.runtimeInstructions, {
+        browserToolsAvailable: { browser: false, device: false },
+      });
       const turnInput = codex.sendTurn.mock.calls[0]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
       assert.deepEqual(turnInput?.runtimeInstructions, {
-        browserToolsAvailable: false,
+        browserToolsAvailable: { browser: false, device: false },
         currentThreadTitle: "Browser access test",
       });
       assert.equal(codex.startSession.mock.calls.length, 1);
@@ -5166,7 +5346,6 @@ describe("provider MCP capabilities", () => {
   it.effect("does not retrofit MCP onto an active provider after settings enable it", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-title-enabled-after-start");
-      revokedThreads.length = 0;
       const { issued, codex, requiresNewMcpSessionBeforeStop, requiresNewMcpSessionAfterStop } =
         yield* startSessionWith(
           false,
@@ -5185,14 +5364,16 @@ describe("provider MCP capabilities", () => {
           { stopSessionAfterTurns: true },
         );
 
-      assert.deepEqual(issued, []);
-      assert.deepEqual(revokedThreads, [threadId, threadId]);
+      assert.deepEqual(issued, [{ threadId, capabilities: ["pull-requests"] }]);
       assert.equal(codex.startSession.mock.calls.length, 1);
       const turnInput = codex.sendTurn.mock.calls[0]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
-      assert.equal(turnInput?.runtimeInstructions, undefined);
-      assert.equal(requiresNewMcpSessionBeforeStop, true);
+      assert.deepEqual(turnInput?.runtimeInstructions, {
+        browserToolsAvailable: { browser: false, device: false },
+        currentThreadTitle: "Browser access test",
+      });
+      assert.equal(requiresNewMcpSessionBeforeStop, false);
       assert.equal(requiresNewMcpSessionAfterStop, false);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5215,20 +5396,20 @@ describe("provider MCP capabilities", () => {
         true,
       );
 
-      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      assert.deepEqual(issued[0]?.capabilities, ["device", "preview", "pull-requests"]);
       assert.equal(requiresNewMcpSessionBeforeStop, false);
       assert.equal(codex.startSession.mock.calls.length, 1);
       const turnInput = codex.sendTurn.mock.calls[0]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
       assert.deepEqual(turnInput?.runtimeInstructions, {
-        browserToolsAvailable: true,
+        browserToolsAvailable: { browser: true, device: true },
         currentThreadTitle: "Browser access test",
       });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("restores capabilities after a transient context lookup failure", () =>
+  it.effect("preserves unrelated capabilities across a transient title lookup failure", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-title-context-recovers");
       const { issued, codex } = yield* startSessionWith(
@@ -5247,19 +5428,19 @@ describe("provider MCP capabilities", () => {
         1,
       );
 
-      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      assert.deepEqual(issued[0]?.capabilities, ["device", "preview", "pull-requests"]);
       assert.equal(codex.startSession.mock.calls.length, 1);
       const failedLookupTurn = codex.sendTurn.mock.calls[0]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
       assert.deepEqual(failedLookupTurn?.runtimeInstructions, {
-        browserToolsAvailable: false,
+        browserToolsAvailable: { browser: true, device: true },
       });
       const recoveredTurn = codex.sendTurn.mock.calls[1]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
       assert.deepEqual(recoveredTurn?.runtimeInstructions, {
-        browserToolsAvailable: true,
+        browserToolsAvailable: { browser: true, device: true },
         currentThreadTitle: "Browser access test",
       });
     }).pipe(Effect.provide(NodeServices.layer)),
@@ -5285,18 +5466,19 @@ describe("provider MCP capabilities", () => {
         { settingsLookupFailuresAfterStart: 1 },
       );
 
-      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      assert.deepEqual(issued[0]?.capabilities, ["device", "preview", "pull-requests"]);
       const turnInput = codex.sendTurn.mock.calls[0]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
-      assert.deepEqual(turnInput?.runtimeInstructions, { browserToolsAvailable: false });
+      assert.deepEqual(turnInput?.runtimeInstructions, {
+        browserToolsAvailable: { browser: false, device: false },
+      });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("keeps attached MCP dormant while disabled and restores it in place", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-title-disabled-after-start");
-      revokedThreads.length = 0;
       const { issued, codex } = yield* startSessionWith(
         false,
         threadId,
@@ -5312,20 +5494,19 @@ describe("provider MCP capabilities", () => {
         [false, true],
       );
 
-      assert.deepEqual(issued[0]?.capabilities, ["thread-title"]);
-      assert.deepEqual(revokedThreads, []);
+      assert.deepEqual(issued[0]?.capabilities, ["pull-requests", "thread-title"]);
       assert.equal(codex.startSession.mock.calls.length, 1);
       const disabledTurn = codex.sendTurn.mock.calls[0]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
       assert.deepEqual(disabledTurn?.runtimeInstructions, {
-        browserToolsAvailable: false,
+        browserToolsAvailable: { browser: false, device: false },
       });
       const reenabledTurn = codex.sendTurn.mock.calls[1]?.[0] as
         | ProviderAdapterSendTurnInput
         | undefined;
       assert.deepEqual(reenabledTurn?.runtimeInstructions, {
-        browserToolsAvailable: false,
+        browserToolsAvailable: { browser: false, device: false },
         currentThreadTitle: "Browser access test",
       });
     }).pipe(Effect.provide(NodeServices.layer)),
@@ -5346,11 +5527,13 @@ describe("provider MCP capabilities", () => {
         "error",
       );
 
-      assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+      assert.deepEqual(issued[0]?.capabilities, ["device", "preview", "pull-requests"]);
       const startInput = codex.startSession.mock.calls[0]?.[0] as
         | ProviderAdapterSessionStartInput
         | undefined;
-      assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+      assert.deepEqual(startInput?.runtimeInstructions, {
+        browserToolsAvailable: { browser: true, device: true },
+      });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5385,11 +5568,13 @@ describe("provider MCP capabilities", () => {
           threadAvailable,
         );
 
-        assert.deepEqual(issued[0]?.capabilities, ["preview"]);
+        assert.deepEqual(issued[0]?.capabilities, ["device", "preview", "pull-requests"]);
         const startInput = codex.startSession.mock.calls[0]?.[0] as
           | ProviderAdapterSessionStartInput
           | undefined;
-        assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: true });
+        assert.deepEqual(startInput?.runtimeInstructions, {
+          browserToolsAvailable: { browser: true, device: true },
+        });
       }
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5408,7 +5593,12 @@ describe("provider MCP capabilities", () => {
         { snoozedUntil: "2025-12-31T23:59:59.000Z" },
       );
 
-      assert.deepEqual(issued[0]?.capabilities, ["thread-title", "preview"]);
+      assert.deepEqual(issued[0]?.capabilities, [
+        "device",
+        "preview",
+        "pull-requests",
+        "thread-title",
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5424,12 +5614,14 @@ describe("provider MCP capabilities", () => {
           titleStateSource,
         );
 
-        assert.deepEqual(issued[0]?.capabilities, []);
+        assert.deepEqual(issued[0]?.capabilities, ["pull-requests"]);
         assert.equal(isTitleRenameAvailable.mock.calls.length, 0);
         const startInput = codex.startSession.mock.calls[0]?.[0] as
           | ProviderAdapterSessionStartInput
           | undefined;
-        assert.deepEqual(startInput?.runtimeInstructions, { browserToolsAvailable: false });
+        assert.deepEqual(startInput?.runtimeInstructions, {
+          browserToolsAvailable: { browser: false, device: false },
+        });
       }
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5450,10 +5642,45 @@ describe("provider MCP capabilities", () => {
         | ProviderAdapterSendTurnInput
         | undefined;
       assert.deepEqual(turnInput?.runtimeInstructions, {
-        browserToolsAvailable: false,
+        browserToolsAvailable: { browser: false, device: false },
         currentThreadTitle: "Browser access test",
       });
       assert.equal(isTitleRenameAvailable.mock.calls.length, 2);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("a project device override grants device access when the environment denies it", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-project-device-on");
+      const { issued } = yield* startSessionWith({ browser: false, device: false }, threadId, {
+        device: true,
+      });
+      assert.deepEqual(issued, [{ threadId, capabilities: ["device", "pull-requests"] }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  // Without orchestration the project cannot be resolved, so an overridden
+  // capability is withheld; one no project overrides keeps its environment value.
+  it.effect("withholds only the overridden capability when the project cannot be resolved", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-no-orchestration-device-override");
+      const { issued } = yield* startSessionWith(
+        { browser: true, device: true },
+        threadId,
+        { device: false },
+        false,
+        "generated",
+        false,
+        {},
+        true,
+        true,
+        "Browser access test",
+        undefined,
+        undefined,
+        0,
+        { withoutOrchestration: true },
+      );
+      assert.deepEqual(issued, [{ threadId, capabilities: ["preview", "pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

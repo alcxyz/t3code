@@ -86,6 +86,7 @@ function makeHarness(
   const unused = () => Effect.die("unexpected query");
   const queries = ProjectionSnapshotQuery.of({
     getUserInputActivity: unused,
+    listActivitiesByKind: unused,
     getCommandReadModel: unused,
     getSnapshot: unused,
     getShellSnapshot: unused,
@@ -95,6 +96,7 @@ function makeHarness(
     getCounts: unused,
     getEventReplayStats: unused,
     getActiveProjectByWorkspaceRoot: unused,
+    getProjectShells: unused,
     getProjectShellById: unused,
     getFirstActiveThreadIdByProjectId: unused,
     getImportedAgentSessionSources: unused,

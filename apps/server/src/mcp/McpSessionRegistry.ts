@@ -14,7 +14,7 @@ import * as McpProviderSession from "./McpProviderSession.ts";
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
-  readonly capabilities?: ReadonlyArray<McpInvocationContext.McpCapability>;
+  readonly capabilities: ReadonlySet<McpInvocationContext.McpCapability>;
 }
 
 export interface McpIssuedCredential {
@@ -34,7 +34,7 @@ export interface McpSessionRegistryShape {
   readonly touch: (threadId: ThreadId) => Effect.Effect<void>;
   readonly updateThreadCapabilities: (
     threadId: ThreadId,
-    capabilities: ReadonlyArray<McpInvocationContext.McpCapability>,
+    capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
   ) => Effect.Effect<void>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   readonly revokeThread: (threadId: ThreadId) => Effect.Effect<void>;
@@ -73,7 +73,7 @@ export interface McpSessionRegistryOptions {
  *
  * The bound matters because `/mcp` is mounted outside the environment auth
  * stack and is reachable on whatever host the server binds to, so this token is
- * the only thing guarding the preview toolkit on a remote-reachable server.
+ * the only thing guarding the `t3-code` toolkits on a remote-reachable server.
  */
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
@@ -133,7 +133,10 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
-        capabilities: new Set(request.capabilities ?? ["preview"]),
+        capabilities: new Set<McpInvocationContext.McpCapability>([
+          "pull-requests",
+          ...request.capabilities,
+        ]),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -149,6 +152,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerInstanceId: scope.providerInstanceId,
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
+          capabilities: scope.capabilities,
         },
       };
     },
@@ -203,7 +207,13 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
             if (record.scope.threadId === threadId) {
               next.set(tokenHash, {
                 ...record,
-                scope: { ...record.scope, capabilities: new Set(capabilities) },
+                scope: {
+                  ...record.scope,
+                  capabilities: new Set<McpInvocationContext.McpCapability>([
+                    "pull-requests",
+                    ...capabilities,
+                  ]),
+                },
               });
             }
           }
@@ -261,7 +271,7 @@ export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
 
 export const updateActiveMcpThreadCapabilities = (
   threadId: ThreadId,
-  capabilities: ReadonlyArray<McpInvocationContext.McpCapability>,
+  capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
 ): Effect.Effect<void> =>
   activeMcpSessionRegistry
     ? activeMcpSessionRegistry.updateThreadCapabilities(threadId, capabilities)

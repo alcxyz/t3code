@@ -44,7 +44,7 @@ const insertEvent = (
   `;
 
 it.layer(NodeSqliteClient.layerMemory())("fork title-state compatibility", (it) => {
-  it.effect("keeps the shared migration ledger at 49 and upgrades legacy ownership", () =>
+  it.effect("upgrades the legacy prerequisite ledger to upstream 52 and preserves ownership", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 49 });
@@ -81,8 +81,8 @@ it.layer(NodeSqliteClient.layerMemory())("fork title-state compatibility", (it) 
       const migrations = yield* sql<{ readonly id: number; readonly name: string }>`
         SELECT migration_id AS id, name FROM effect_sql_migrations ORDER BY migration_id DESC LIMIT 1
       `;
-      assert.deepEqual(migrations, [{ id: 49, name: "ProjectionThreadsActiveOrderKey" }]);
-      assert.deepEqual(migrationManifest.at(-1), [49, "ProjectionThreadsActiveOrderKey"]);
+      assert.deepEqual(migrations, [{ id: 52, name: "ProjectionThreadTitleState" }]);
+      assert.deepEqual(migrationManifest.at(-1), [52, "ProjectionThreadTitleState"]);
 
       const rows = yield* sql<{
         readonly id: string;
@@ -118,6 +118,87 @@ it.layer(NodeSqliteClient.layerMemory())("fork title-state compatibility", (it) 
 });
 
 it.layer(NodeSqliteClient.layerMemory())("fork migration ledger compatibility", (it) => {
+  it.effect("repairs the known legacy 50 plus upstream 51 history", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 49 });
+      yield* sql`ALTER TABLE projection_threads ADD COLUMN title_state_json TEXT`;
+      yield* sql`
+        INSERT INTO effect_sql_migrations (migration_id, name)
+        VALUES (50, 'ProjectionThreadTitleState')
+      `;
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          linked_pull_request_json, created_at, updated_at, title_state_json
+        ) VALUES (
+          'intermediate', 'project-1', 'Chosen title',
+          '{"instanceId":"codex","model":"gpt-5.4"}', 'full-access',
+          '{"projectId":"project-1","repository":"acme/widgets","number":7,"url":"https://github.com/acme/widgets/pull/7"}',
+          '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z',
+          '{"source":"manual","version":"manual-rename","needsRefinement":false}'
+        )
+      `;
+      yield* reconcileTitleState;
+      const watermarkBefore = yield* sql<{ readonly sequence: number }>`
+        SELECT last_event_sequence AS sequence
+        FROM fork_projection_thread_title_source_state
+      `;
+
+      // This explicit bounded run simulates the intermediate upstream build:
+      // migration 50 is hidden by the legacy high-water mark, while 51 succeeds.
+      yield* runMigrations({ toMigrationInclusive: 51 });
+      yield* runMigrations();
+      yield* runMigrations();
+
+      const ledger = yield* sql<{ readonly id: number; readonly name: string }>`
+        SELECT migration_id AS id, name
+        FROM effect_sql_migrations
+        WHERE migration_id >= 50
+        ORDER BY migration_id
+      `;
+      assert.deepEqual(ledger, [
+        { id: 50, name: "ProjectionThreadPullRequests" },
+        { id: 51, name: "ProjectionThreadMessageContext" },
+        { id: 52, name: "ProjectionThreadTitleState" },
+      ]);
+      const links = yield* sql<{
+        readonly threadId: string;
+        readonly host: string;
+        readonly repository: string;
+        readonly number: number;
+      }>`
+        SELECT thread_id AS "threadId", host, repository, number
+        FROM projection_thread_pull_requests
+      `;
+      assert.deepEqual(links, [
+        {
+          threadId: "intermediate",
+          host: "github.com",
+          repository: "acme/widgets",
+          number: 7,
+        },
+      ]);
+      const threads = yield* sql<{ readonly state: string }>`
+        SELECT title_state_json AS state
+        FROM projection_threads
+        WHERE thread_id = 'intermediate'
+      `;
+      assert.deepEqual(threads, [
+        {
+          state: '{"source":"manual","version":"manual-rename","needsRefinement":false}',
+        },
+      ]);
+      const watermarkAfter = yield* sql<{ readonly sequence: number }>`
+        SELECT last_event_sequence AS sequence
+        FROM fork_projection_thread_title_source_state
+      `;
+      assert.deepEqual(watermarkAfter, watermarkBefore);
+    }),
+  );
+});
+
+it.layer(NodeSqliteClient.layerMemory())("unknown migration provenance", (it) => {
   it.effect("leaves migration 50 alone when its provenance does not match", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -128,13 +209,13 @@ it.layer(NodeSqliteClient.layerMemory())("fork migration ledger compatibility", 
         VALUES (50, 'UnrelatedUpstreamMigration')
       `;
 
+      yield* runMigrations({ toMigrationInclusive: 51 });
       yield* runMigrations();
 
       const migrations = yield* sql<{ readonly id: number; readonly name: string }>`
         SELECT migration_id AS id, name
         FROM effect_sql_migrations
-        ORDER BY migration_id DESC
-        LIMIT 1
+        WHERE migration_id = 50
       `;
       assert.deepEqual(migrations, [{ id: 50, name: "UnrelatedUpstreamMigration" }]);
     }),

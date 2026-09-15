@@ -63,6 +63,9 @@ import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
 import Migration0048 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
 import Migration0049 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
 import ForkProjectionThreadTitleSource from "./Migrations/ForkProjectionThreadTitleSource.ts";
+import Migration0050 from "./Migrations/050_ProjectionThreadPullRequests.ts";
+import Migration0051 from "./Migrations/051_ProjectionThreadMessageContext.ts";
+import Migration0052 from "./Migrations/052_ProjectionThreadTitleState.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -124,6 +127,9 @@ const migrationEntries = [
   [47, "ProjectionProjectIcon", Migration0047],
   [48, "ProjectionThreadBranchPullRequest", Migration0048],
   [49, "ProjectionThreadsActiveOrderKey", Migration0049],
+  [50, "ProjectionThreadPullRequests", Migration0050],
+  [51, "ProjectionThreadMessageContext", Migration0051],
+  [52, "ProjectionThreadTitleState", Migration0052],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -149,16 +155,27 @@ const releasePrerequisiteTitleStateMigrationId = Effect.gen(function* () {
         FROM effect_sql_migrations
         ORDER BY migration_id
       `;
-      const prerequisiteMigration = recordedMigrations.at(-1);
-      const hasExactPrerequisiteHistory =
-        recordedMigrations.length === migrationManifest.length + 1 &&
-        migrationManifest.every(
-          ([id, name], index) =>
-            recordedMigrations[index]?.id === id && recordedMigrations[index]?.name === name,
-        ) &&
+      const prerequisiteBase = migrationManifest.filter(([id]) => id < 50);
+      const hasExactPrerequisiteBase = prerequisiteBase.every(
+        ([id, name], index) =>
+          recordedMigrations[index]?.id === id && recordedMigrations[index]?.name === name,
+      );
+      const prerequisiteMigration = recordedMigrations[prerequisiteBase.length];
+      const hasLegacyTitleMigration =
         prerequisiteMigration?.id === 50 &&
         prerequisiteMigration.name === "ProjectionThreadTitleState";
-      if (!hasExactPrerequisiteHistory) {
+      const suffix = recordedMigrations.slice(prerequisiteBase.length + 1);
+      const hasExactPrerequisiteHistory =
+        recordedMigrations.length === prerequisiteBase.length + 1 &&
+        hasExactPrerequisiteBase &&
+        hasLegacyTitleMigration;
+      const hasIntermediateUpstreamHistory =
+        hasExactPrerequisiteBase &&
+        hasLegacyTitleMigration &&
+        suffix.length === 1 &&
+        suffix[0]?.id === 51 &&
+        suffix[0].name === "ProjectionThreadMessageContext";
+      if (!hasExactPrerequisiteHistory && !hasIntermediateUpstreamHistory) {
         return;
       }
 
@@ -169,12 +186,24 @@ const releasePrerequisiteTitleStateMigrationId = Effect.gen(function* () {
         return;
       }
 
-      // Prerequisite builds briefly claimed upstream migration 50 for this exact
-      // column. Release only that fully matched history so upstream can reuse 50.
-      yield* sql`
-        DELETE FROM effect_sql_migrations
-        WHERE migration_id = 50 AND name = 'ProjectionThreadTitleState'
-      `;
+      if (hasIntermediateUpstreamHistory) {
+        // An upstream 51 build skipped its migration 50 because the legacy title
+        // migration already held that id. Apply 50 directly before repairing its
+        // ledger name; the recorded 51 high-water mark can then remain intact.
+        yield* Migration0050;
+        yield* sql`
+          UPDATE effect_sql_migrations
+          SET name = 'ProjectionThreadPullRequests'
+          WHERE migration_id = 50 AND name = 'ProjectionThreadTitleState'
+        `;
+      } else {
+        // Prerequisite builds briefly claimed upstream migration 50 for this exact
+        // column. Release only that fully matched history so upstream can reuse 50.
+        yield* sql`
+          DELETE FROM effect_sql_migrations
+          WHERE migration_id = 50 AND name = 'ProjectionThreadTitleState'
+        `;
+      }
     }),
   );
 });
@@ -215,10 +244,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     yield* releasePrerequisiteTitleStateMigrationId;
   }
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
-  // This fork and the pinned, unmerged title-state PR must not claim a numbered
-  // migration: upstream owns that sequence, and the Effect migrator skips every
-  // id at or below its high-water mark. Keep these extensions idempotent and
-  // outside the shared ledger so a later upstream migration is never suppressed.
+  // Fork-only badge and ownership compatibility stay outside upstream's ledger.
   if (toMigrationInclusive === undefined) {
     yield* ForkProjectionThreadTitleSource;
   }

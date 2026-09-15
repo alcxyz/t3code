@@ -21,6 +21,10 @@ import {
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
+import {
+  openAndroidLiveUpdateSettings,
+  supportsAndroidLiveUpdateSettings,
+} from "../agent-awareness/androidNotifications";
 import { setLiveActivityUpdatesEnabled } from "../agent-awareness/liveActivityPreferences";
 import { requestAgentNotificationPermission } from "../agent-awareness/notificationPermissions";
 import {
@@ -49,15 +53,9 @@ import {
   MIN_AUTOMATIC_TITLE_RENAME_COUNT,
   MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import { resolveAutomaticThreadTitleRenameLimit } from "@t3tools/shared/serverSettings";
-import {
-  filterSharedServerPatch,
-  findSharedSettingsMismatches,
-  pickSharedServerSettings,
-  supportsSharedSettingsSync,
-} from "@t3tools/client-runtime/state/shared-settings";
+import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
 import {
   type AppUpdateCheckState,
@@ -73,6 +71,12 @@ import {
   formatAutomaticTitleRenameLimitDescription,
   resolveAgentAwarenessPlatformPresentation,
 } from "./SettingsRouteScreen.logic";
+import {
+  planAutomaticTitleSettingsSync,
+  planAutoSettleSettingsSync,
+  type AutoSettleSettings,
+  type AutomaticTitleSettings,
+} from "./autoSettleSettingsSync";
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
@@ -558,7 +562,13 @@ function ConfiguredSettingsRouteScreen() {
               liveActivityStatus === "linking"
             }
             icon="bolt.circle"
-            label={Platform.OS === "android" ? "Ongoing Agent Activity" : "Live Activity Updates"}
+            label={
+              Platform.OS === "android"
+                ? supportsAndroidLiveUpdateSettings()
+                  ? "Agent Live Updates"
+                  : "Ongoing Agent Activity"
+                : "Live Activity Updates"
+            }
             subtitle={agentAwarenessSubtitle}
             // Same gate: a saved preference is meaningless until the device
             // registration the relay needs to push updates has succeeded.
@@ -569,6 +579,20 @@ function ConfiguredSettingsRouteScreen() {
             }
             onValueChange={handleLiveActivitiesChange}
           />
+          {supportsAndroidLiveUpdateSettings() ? (
+            <SettingsRow
+              icon="bolt.circle"
+              label="Live Update Settings"
+              onPress={() => {
+                void openAndroidLiveUpdateSettings().catch(() => {
+                  Alert.alert(
+                    "Couldn't open Settings",
+                    "Open Android Settings, select T3 Code, then enable Live Updates in Notifications.",
+                  );
+                });
+              }}
+            />
+          ) : null}
         </SettingsSection>
 
         <GeneralSettingsSection />
@@ -591,6 +615,9 @@ function GeneralSettingsSection() {
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
+      {Platform.OS === "ios" ? (
+        <SettingsRow icon="keyboard" label="Keyboard" target="SettingsKeyboard" />
+      ) : null}
       <SharedThreadSettingsRows />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
     </SettingsSection>
@@ -608,8 +635,8 @@ const AUTOMATIC_TITLE_POLICY_OPTIONS = [
 /**
  * These user preferences must be available to every server that can act on
  * them. Mobile has no primary environment, so the first eligible sync target
- * provides the reference value. Edits fan out to every eligible target, and a
- * mismatch row lets the user push the reference out.
+ * provides the reference value. Edits fan out to every eligible target while
+ * title and auto-settle repair actions leave unrelated settings intact.
  */
 function SharedThreadSettingsRows() {
   const { environments } = useEnvironments();
@@ -639,30 +666,40 @@ function SharedThreadSettingsRows() {
     return null;
   }
 
-  const writeToAll = (patch: ServerSettingsPatch) => {
+  const writeToAll = (patch: Partial<AutoSettleSettings>) => {
     for (const environment of syncTargets) {
       void updateSettings({ environmentId: environment.environmentId, input: { patch } });
     }
   };
 
-  const writeTitleSettingsToAll = (patch: ServerSettingsPatch) => {
+  const writeTitleSettingsToAll = (patch: Partial<AutomaticTitleSettings>) => {
     for (const environment of titleTargets) {
       void updateSettings({ environmentId: environment.environmentId, input: { patch } });
     }
   };
 
-  const mismatches = findSharedSettingsMismatches({
-    primaryEnvironmentId: reference.environmentId,
-    primarySettings: referenceSettings,
-    primaryCapabilities: reference.serverConfig?.environment.capabilities,
-    environments: environments.map((environment) => ({
+  const { patch: autoSettlePatch, mismatches: autoSettleMismatches } = planAutoSettleSettingsSync(
+    { environmentId: reference.environmentId, settings: referenceSettings },
+    syncTargets.map((environment) => ({
       environmentId: environment.environmentId,
       label: environment.label,
-      syncEligible: supportsSharedSettingsSync(environment),
       settings: environment.serverConfig?.settings ?? null,
-      capabilities: environment.serverConfig?.environment.capabilities,
     })),
-  });
+  );
+  const { patch: automaticTitlePatch, mismatches: automaticTitleMismatches } =
+    titleReferenceSettings === null
+      ? { patch: null, mismatches: [] }
+      : planAutomaticTitleSettingsSync(
+          {
+            environmentId: titleTargets[0]!.environmentId,
+            settings: titleReferenceSettings,
+          },
+          titleTargets.map((environment) => ({
+            environmentId: environment.environmentId,
+            label: environment.label,
+            settings: environment.serverConfig?.settings ?? null,
+          })),
+        );
 
   const afterDays = referenceSettings.sidebarAutoSettleAfterDays;
   const titleRenameLimit = titleReferenceSettings
@@ -994,6 +1031,30 @@ function SharedThreadSettingsRows() {
               </View>
             </>
           ) : null}
+          {automaticTitlePatch !== null && automaticTitleMismatches.length > 0 ? (
+            <View className="flex-row items-center gap-4 border-t border-border-subtle p-4">
+              <View className="min-w-0 flex-1">
+                <Text className="text-lg text-foreground">Automatic title settings differ</Text>
+                <Text className="text-sm text-foreground-muted">
+                  {automaticTitleMismatches.map((mismatch) => mismatch.label).join(", ")}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  for (const mismatch of automaticTitleMismatches) {
+                    void updateSettings({
+                      environmentId: mismatch.environmentId,
+                      input: { patch: automaticTitlePatch },
+                    });
+                  }
+                }}
+                className="rounded-full bg-subtle px-4 py-2 active:opacity-70"
+              >
+                <Text className="text-base font-t3-medium text-foreground">Apply to all</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </>
       ) : null}
       <SettingsSwitchRow
@@ -1026,41 +1087,29 @@ function SharedThreadSettingsRows() {
           />
         </View>
       ) : null}
-      {mismatches.length > 0 ? (
+      {autoSettleMismatches.length > 0 ? (
         <View className="flex-row items-center gap-4 border-t border-border-subtle p-4">
           <View className="min-w-0 flex-1">
-            <Text className="text-lg text-foreground">Settings differ</Text>
+            <Text className="text-lg text-foreground">Auto-settle defaults differ</Text>
             <Text className="text-sm text-foreground-muted">
-              {mismatches.map((mismatch) => mismatch.label).join(", ")}
+              {autoSettleMismatches.map((mismatch) => mismatch.label).join(", ")}
             </Text>
           </View>
           <Pressable
             accessibilityRole="button"
             onPress={() => {
-              const patch = pickSharedServerSettings(
-                referenceSettings,
-                reference.serverConfig?.environment.capabilities,
-              );
-              for (const mismatch of mismatches) {
-                const target = environments.find(
-                  (candidate) => candidate.environmentId === mismatch.environmentId,
-                );
+              for (const mismatch of autoSettleMismatches) {
                 void updateSettings({
                   environmentId: mismatch.environmentId,
-                  input: {
-                    patch: filterSharedServerPatch(
-                      patch,
-                      target?.serverConfig?.environment.capabilities,
-                      target?.serverConfig?.settings,
-                      referenceSettings,
-                    ),
-                  },
+                  input: { patch: autoSettlePatch },
                 });
               }
             }}
             className="rounded-full bg-subtle px-4 py-2 active:opacity-70"
           >
-            <Text className="text-base font-t3-medium text-foreground">Apply to all</Text>
+            <Text className="text-base font-t3-medium text-foreground">
+              Apply auto-settle defaults
+            </Text>
           </Pressable>
         </View>
       ) : null}
@@ -1191,6 +1240,12 @@ function AppSettingsSection() {
   return (
     <SettingsSection title="App">
       <SettingsRow icon="internaldrive" label="Client Storage" target="SettingsClientStorage" />
+      <SettingsRow icon="stethoscope" label="Diagnostics" target="SettingsDiagnostics" />
+      <SettingsRow
+        icon="doc.on.doc"
+        label="Open source licenses"
+        target="SettingsOpenSourceLicenses"
+      />
       <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
       {updateCheckAvailable ? (
         <Pressable

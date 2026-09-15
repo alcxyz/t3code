@@ -28,21 +28,25 @@ import {
   ProviderUploadFeedbackInput,
   ThreadId,
   TurnId,
+  type ProjectId,
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ProviderSession,
+  type ServerSettings as ServerSettingsValue,
 } from "@t3tools/contracts";
 import { expandAssistantCitationsForProvider } from "@t3tools/shared/assistantCitations";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
-import { resolveProjectAgentBrowserAccess } from "@t3tools/shared/serverSettings";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -52,6 +56,9 @@ import * as Stream from "effect/Stream";
 import { appendUserInputAttachmentPaths } from "../userInputAttachments.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
+import * as DeviceService from "../../device/DeviceService.ts";
+import { ensureAgentDeviceShim } from "../../device/AgentDeviceShim.ts";
+import type * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import {
   increment,
   providerMetricAttributes,
@@ -255,8 +262,6 @@ export interface ProviderServiceLiveOptions {
    * test see whether a credential was requested at all.
    */
   readonly issueMcpCredential?: typeof McpSessionRegistry.issueActiveMcpCredential;
-  /** Same seam as `issueMcpCredential`, for observing the deny path's revoke. */
-  readonly revokeMcpCredential?: typeof McpSessionRegistry.revokeActiveMcpThread;
 }
 
 interface TurnAnalyticsMetadata {
@@ -486,9 +491,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const automaticThreadTitleRateLimit = yield* Effect.serviceOption(AutomaticThreadTitleRateLimit);
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
-  const revokeMcpCredential =
-    options?.revokeMcpCredential ?? McpSessionRegistry.revokeActiveMcpThread;
   const fileSystem = yield* FileSystem.FileSystem;
+  const pathService = yield* Path.Path;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const pendingCompactions = new Map<ThreadId, PendingCompaction>();
   const timedOutNativeCompactions = new Set<ThreadId>();
@@ -860,30 +864,52 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     yield* recordCompletedTurnProperties(properties);
   });
   /**
-   * Deny on an unreadable settings file rather than letting the read failure
-   * escape: adding `ServerSettingsError` to `ProviderServiceError` would widen
-   * a union every caller handles, for a branch that only decides which
-   * optional toolsets are attached.
+   * Resolve the capabilities for this turn. Optional browser, device, and title
+   * grants fail closed without hiding the always-available pull request tools.
    */
   const resolveMcpTurnContext = Effect.fn("ProviderService.resolveMcpTurnContext")(
     function* (threadId: ThreadId) {
       const settings = yield* serverSettings.getSettings;
-      const capabilities: Array<"preview" | "thread-title"> = [];
-
-      const needsThread =
-        settings.automaticThreadTitles ||
-        Object.keys(settings.projectAgentBrowserAccessOverrides).length > 0;
+      const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests"]);
+      const entries = Object.values(settings.projectSettingsOverrides);
+      const browserOverridden = entries.some(
+        (entry) => entry.enableAgentBrowserAccess !== undefined,
+      );
+      const deviceOverridden = entries.some((entry) => entry.enableAgentDeviceAccess !== undefined);
+      const needsThread = settings.automaticThreadTitles || browserOverridden || deviceOverridden;
       const thread =
         needsThread && Option.isSome(projectionQuery)
-          ? yield* projectionQuery.value.getThreadShellById(threadId)
+          ? yield* projectionQuery.value
+              .getThreadShellById(threadId)
+              .pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Could not resolve the thread for optional MCP capabilities.", {
+                    cause,
+                  }).pipe(Effect.as(Option.none())),
+                ),
+              )
           : Option.none();
-
-      const previewEnabled =
-        Object.keys(settings.projectAgentBrowserAccessOverrides).length === 0
-          ? settings.enableAgentBrowserAccess
-          : Option.isSome(thread) &&
-            resolveProjectAgentBrowserAccess(settings, thread.value.projectId);
-      const mcpEndpointRequired = settings.automaticThreadTitles || previewEnabled;
+      const environmentAccess = {
+        browser: settings.enableAgentBrowserAccess,
+        device: settings.enableAgentDeviceAccess,
+      };
+      const access =
+        !browserOverridden && !deviceOverridden
+          ? environmentAccess
+          : Option.isSome(thread)
+            ? (() => {
+                const resolved = resolveProjectSettings(settings, thread.value.projectId).settings;
+                return {
+                  browser: resolved.enableAgentBrowserAccess,
+                  device: resolved.enableAgentDeviceAccess,
+                };
+              })()
+            : {
+                browser: browserOverridden ? false : environmentAccess.browser,
+                device: deviceOverridden ? false : environmentAccess.device,
+              };
+      if (access.browser) capabilities.add("preview");
+      if (access.device) capabilities.add("device");
 
       const automaticTitleLifecycleAllowsUpdates =
         settings.automaticThreadTitles &&
@@ -907,19 +933,20 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ),
           )
         : false;
-      if (automaticTitleUpdatesAllowed) capabilities.push("thread-title");
-
-      if (previewEnabled) capabilities.push("preview");
+      if (automaticTitleUpdatesAllowed) capabilities.add("thread-title");
 
       // A title-only credential does not grant preview access. Guidance is
       // withheld unless the generated title state makes recurring updates eligible.
       const currentThreadTitle =
         automaticTitleUpdatesAllowed && Option.isSome(thread) ? thread.value.title : undefined;
       const runtimeInstructions = {
-        browserToolsAvailable: capabilities.includes("preview"),
+        browserToolsAvailable: {
+          browser: capabilities.has("preview"),
+          device: capabilities.has("device"),
+        },
         ...(currentThreadTitle ? { currentThreadTitle } : {}),
       };
-      return { mcpEndpointRequired, capabilities, runtimeInstructions };
+      return { capabilities, runtimeInstructions };
     },
     Effect.catch((cause) =>
       Effect.logWarning(
@@ -927,36 +954,62 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         { cause },
       ).pipe(
         Effect.as({
-          mcpEndpointRequired: undefined,
-          capabilities: [] as Array<"preview" | "thread-title">,
-          runtimeInstructions: { browserToolsAvailable: false },
+          capabilities: new Set<McpInvocationContext.McpCapability>(["pull-requests"]),
+          runtimeInstructions: { browserToolsAvailable: { browser: false, device: false } },
         }),
       ),
     ),
   );
 
+  /** Install only the local CLI here. device_open supplies a separate config for each host. */
+  const hostPlatform = yield* HostProcessPlatform;
+  const agentDeviceEnvironment = Effect.gen(function* () {
+    const devices = yield* Effect.serviceOption(DeviceService.DeviceService);
+    if (Option.isNone(devices)) return undefined;
+    const entryPath = yield* devices.value.agentCli.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Agent device CLI unavailable", { cause }).pipe(Effect.as(null)),
+      ),
+    );
+    if (!entryPath) return undefined;
+    const shimDir = yield* ensureAgentDeviceShim({
+      entryPath,
+      stateDir: serverConfig.stateDir,
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, pathService),
+      Effect.orElseSucceed(() => undefined),
+    );
+    if (!shimDir) return undefined;
+    return {
+      PATH: shimDir,
+      PATH_SEPARATOR: hostPlatform === "win32" ? ";" : ":",
+      AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1",
+    } satisfies Record<string, string>;
+  });
+
   const clearMcpSession = (threadId: ThreadId) =>
-    revokeMcpCredential(threadId).pipe(
+    McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
       Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
     );
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
       const context = yield* resolveMcpTurnContext(threadId);
-      if (context.mcpEndpointRequired !== true) {
-        yield* clearMcpSession(threadId);
-        yield* Effect.sync(() => McpProviderSession.markMcpProviderSessionUnavailable(threadId));
-        return { ...context, runtimeInstructions: undefined };
-      }
-      // The endpoint must be present at process startup. Keep it attached when
-      // a configured feature is temporarily ineligible so a later turn can
-      // grant that capability without restarting the provider.
       const credential = yield* issueMcpCredential({
         threadId,
         providerInstanceId,
         capabilities: context.capabilities,
       });
       if (credential) {
-        yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
+        const deviceEnvironment = context.capabilities.has("device")
+          ? yield* agentDeviceEnvironment
+          : undefined;
+        yield* Effect.sync(() =>
+          McpProviderSession.setMcpProviderSession({
+            ...credential.config,
+            ...(deviceEnvironment ? { agentDeviceEnvironment: deviceEnvironment } : {}),
+          }),
+        );
       } else {
         yield* Effect.sync(() => McpProviderSession.markMcpProviderSessionUnavailable(threadId));
       }
@@ -1101,6 +1154,35 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         canonicalEvent.type === "turn.aborted"
       ) {
         yield* recordTurnCompletedAnalytics(source, canonicalEvent);
+        if (source.provider === "claudeAgent") {
+          // Background Claude turns have no sendTurn response to persist their
+          // new native boundary. Save it before clients can checkpoint the turn.
+          yield* Effect.gen(function* () {
+            const adapter = yield* registry.getByInstance(source.instanceId);
+            const session = (yield* adapter.listSessions()).find(
+              (session) => session.threadId === canonicalEvent.threadId,
+            );
+            if (session?.resumeCursor !== undefined) {
+              const binding = yield* directory.getBinding(session.threadId);
+              if (
+                Option.isNone(binding) ||
+                binding.value.providerInstanceId !== source.instanceId
+              ) {
+                return;
+              }
+              yield* directory.upsert({
+                threadId: session.threadId,
+                provider: source.provider,
+                providerInstanceId: source.instanceId,
+                resumeCursor: session.resumeCursor,
+              });
+            }
+          }).pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("failed to persist Claude turn resume state", { cause }),
+            ),
+          );
+        }
       } else if (canonicalEvent.type === "session.exited") {
         yield* clearTurnAnalyticsSession(source.instanceId, canonicalEvent.threadId);
       }
@@ -1571,30 +1653,45 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
     // Every attachment gets an on-disk path in the prompt so the model's tools
     // can dereference the actual file. All attachments then go to the adapter,
-    // and each adapter decides what its provider ingests natively: OpenCode
-    // sends generic files as file parts, the others send images only and rely
-    // on the path line for everything else. Unresolvable ids are skipped here
-    // and surface as adapter errors when the file is read.
+    // and each adapter decides what its provider ingests natively. Folded
+    // clipboard text remains path-only everywhere: eagerly embedding it would
+    // spend the same context the client deliberately preserved by folding it.
+    // Unresolvable ids are skipped here and surface as adapter errors when the
+    // file is read.
     let inputTextWithAttachmentContext = inputTextWithCitations;
     const appendAttachmentContext = (context: string | undefined) => {
-      if (context === undefined) return;
+      if (context === undefined) return true;
       const candidate = inputTextWithAttachmentContext
         ? `${inputTextWithAttachmentContext}\n\n${context}`
         : context;
       if (candidate.length <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {
         inputTextWithAttachmentContext = candidate;
+        return true;
       }
+      return false;
     };
     for (const attachment of attachments) {
       const attachmentPath = resolveAttachmentPath({
         attachmentsDir: serverConfig.attachmentsDir,
         attachment,
       });
-      appendAttachmentContext(
+      const isPastedText =
+        attachment.type === "file" &&
+        "source" in attachment &&
+        attachment.source?._tag === "pasted-text";
+      const appended = appendAttachmentContext(
         attachmentPath === null
           ? undefined
-          : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${attachmentPath}]`,
+          : isPastedText
+            ? `[Pasted text "${attachment.name}" is saved at: ${attachmentPath}. Inspect it as needed.]`
+            : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${attachmentPath}]`,
       );
+      if (isPastedText && !appended) {
+        return yield* toValidationError(
+          "ProviderService.sendTurn",
+          `Input plus pasted-text attachment context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
+        );
+      }
     }
     for (const attachment of attachments) {
       const source =
@@ -2027,6 +2124,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.thread_id": input.threadId,
         });
         if (routed.isActive) {
+          const session = (yield* routed.adapter.listSessions()).find(
+            (session) => session.threadId === routed.threadId,
+          );
+          if (session) {
+            yield* upsertSessionBinding(
+              { ...session, providerInstanceId: routed.instanceId },
+              input.threadId,
+            );
+          }
           yield* routed.adapter.stopSession(routed.threadId);
         }
         const pendingCompaction = pendingCompactions.get(input.threadId);
@@ -2197,6 +2303,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "provider.rollback_turns": input.numTurns,
       });
       yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
+      const session = (yield* routed.adapter.listSessions()).find(
+        (session) => session.threadId === routed.threadId,
+      );
+      if (session) {
+        yield* upsertSessionBinding(
+          { ...session, providerInstanceId: routed.instanceId },
+          input.threadId,
+        );
+      }
       yield* analytics.record("provider.conversation.rolled_back", {
         provider: routed.adapter.provider,
         turns: input.numTurns,
@@ -2254,10 +2369,30 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   );
 
   const runStopAll = Effect.fn("runStopAll")(function* () {
-    const continueAfterRestart = yield* serverSettings.getSettings.pipe(
-      Effect.map((settings) => settings.continueThreadsAfterServerUpdate),
-      Effect.orElseSucceed(() => false),
+    // Continuation is project-scopable, so decide it per session's project;
+    // without orchestration the environment value is all there is.
+    const stopSettings = yield* serverSettings.getSettings.pipe(
+      Effect.map(Option.some),
+      Effect.orElseSucceed(() => Option.none<ServerSettingsValue>()),
     );
+    const continueAfterRestartFor = Effect.fn("continueAfterRestartFor")(function* (
+      threadId: ThreadId,
+    ) {
+      if (Option.isNone(stopSettings)) return false;
+      const settings = stopSettings.value;
+      const overridden = Object.values(settings.projectSettingsOverrides).some(
+        (entry) => entry.continueThreadsAfterServerUpdate !== undefined,
+      );
+      if (!overridden || Option.isNone(projectionQuery)) {
+        return settings.continueThreadsAfterServerUpdate;
+      }
+      const thread = yield* projectionQuery.value
+        .getThreadShellById(threadId)
+        .pipe(Effect.orElseSucceed(() => Option.none<{ projectId: ProjectId }>()));
+      if (Option.isNone(thread)) return settings.continueThreadsAfterServerUpdate;
+      return resolveProjectSettings(settings, thread.value.projectId).settings
+        .continueThreadsAfterServerUpdate;
+    });
     const properties = yield* Ref.modify(turnAnalytics, (state) => {
       const completed: Array<Readonly<Record<string, unknown>>> = [];
       for (const [sessionKey, session] of state.sessions) {
@@ -2283,15 +2418,20 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       ),
     ).pipe(Effect.map((sessionsByAdapter) => sessionsByAdapter.flatMap((sessions) => sessions)));
     yield* Effect.forEach(activeSessions, (session) =>
-      Effect.flatMap(nowIso, (lastRuntimeEventAt) =>
-        upsertSessionBinding(session, session.threadId, {
-          ...(continueAfterRestart && session.status === "running" && session.activeTurnId
+      Effect.gen(function* () {
+        const continueAfterRestart =
+          session.status === "running" && session.activeTurnId
+            ? yield* continueAfterRestartFor(session.threadId)
+            : false;
+        const lastRuntimeEventAt = yield* nowIso;
+        yield* upsertSessionBinding(session, session.threadId, {
+          ...(continueAfterRestart && session.activeTurnId
             ? { continueAfterServerUpdate: session.activeTurnId }
             : {}),
           lastRuntimeEvent: "provider.stopAll",
           lastRuntimeEventAt,
-        }),
-      ),
+        });
+      }),
     ).pipe(Effect.asVoid);
     yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
