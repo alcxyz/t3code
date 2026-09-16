@@ -18,15 +18,25 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: feat/automatic-thread-titles
-          fetch-depth: 0
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+      # checkout's credential cleanup recursively inspects every gitlink, but
+      # vendored repositories under .repos contain gitlinks not owned by the
+      # root .gitmodules. Fetch directly so credentials stay ephemeral without
+      # invoking that submodule cleanup path.
+      - name: Check out title fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/fork-sync-checkout.gitconfig"
+          : > "$GIT_CONFIG_GLOBAL"
+          gh auth setup-git
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch --no-tags --no-recurse-submodules --filter=blob:none origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            '+refs/heads/feat/automatic-thread-titles:refs/remotes/origin/feat/automatic-thread-titles'
+          git checkout --force -B feat/automatic-thread-titles \
+            refs/remotes/origin/feat/automatic-thread-titles
 
       - name: Test sync safeguards
         run: python3 .github/scripts/test-fork-sync.py
