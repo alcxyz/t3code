@@ -1,0 +1,69 @@
+name: Sync and validate title fork
+
+on:
+  schedule:
+    - cron: "17 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: automatic-title-fork-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'alcxyz/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/automatic-thread-titles
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test sync safeguards
+        run: python3 .github/scripts/test-fork-sync.py
+
+      - name: Prepare upstream merge
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_VALIDATION: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          gh auth setup-git
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          bash .github/scripts/fork-sync.sh prepare
+
+      - name: Set up Vite+
+        if: steps.prepare.outputs.validate == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Install native build libraries
+        if: steps.prepare.outputs.validate == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config ripgrep
+
+      - name: Validate source and desktop build
+        if: steps.prepare.outputs.validate == 'true'
+        run: bash .github/scripts/validate-title-fork.sh
+
+      - name: Publish validated feature branch
+        if: steps.prepare.outputs.validate == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_FEATURE_HEAD: ${{ steps.prepare.outputs.feature_head }}
+        run: bash .github/scripts/fork-sync.sh publish
+
+      - name: Report blocked sync
+        if: failure()
+        run: |
+          echo 'Fork sync failed. Review the merge or validation logs before retrying.' >> "$GITHUB_STEP_SUMMARY"
