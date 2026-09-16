@@ -173,6 +173,7 @@ function ThreadNavigationSidebarPane(
     pinThread,
     unpinThread,
     moveThread,
+    renameThread,
     regenerateThreadTitle,
   } = useThreadListActions();
   const threadListV2Enabled = useThreadListV2Enabled();
@@ -952,6 +953,7 @@ function ThreadNavigationSidebarPane(
               onSelectThread={handleSelectThread}
               onDeleteThread={confirmDeleteThread}
               onArchiveThread={archiveThread}
+              onRenameThread={renameThread}
               onRegenerateThreadTitle={regenerateThreadTitle}
               onOpenTitleUpdates={handleOpenTitleUpdates}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
@@ -1071,6 +1073,7 @@ function ThreadNavigationSidebarPane(
               fullSwipeWidth={props.width - 20}
               onArchiveThread={archiveThread}
               onDeleteThread={confirmDeleteThread}
+              onRenameThread={renameThread}
               onRegenerateThreadTitle={regenerateThreadTitle}
               onOpenTitleUpdates={handleOpenTitleUpdates}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
@@ -1116,6 +1119,7 @@ function ThreadNavigationSidebarPane(
       projectByKey,
       projectTitleByProjectKey,
       regenerateThreadTitle,
+      renameThread,
       props.onNewThreadInProject,
       props.onNewThreadOnBranch,
       props.searchQuery,

@@ -438,6 +438,7 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
 
 const THREAD_ROW_MENU_ACTIONS: MenuAction[] = [
   { id: "archive", title: "Archive", image: "archivebox" },
+  { id: "rename", title: "Rename", image: "square.and.pencil" },
   { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
 ];
 
@@ -459,6 +460,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   readonly onArchiveThread: (thread: EnvironmentThreadShell) => void;
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
+  readonly onRenameThread: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => void;
   readonly onOpenTitleUpdates: (thread: EnvironmentThreadShell) => void;
   readonly titleRegenerationSupported: boolean;
@@ -487,6 +489,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
     onSelectThread,
     onArchiveThread,
     onDeleteThread,
+    onRenameThread,
     onRegenerateThreadTitle,
     onOpenTitleUpdates,
     onNewThreadOnBranch,
@@ -530,6 +533,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
   const handleArchive = useCallback(() => onArchiveThread(thread), [onArchiveThread, thread]);
+  const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
@@ -551,6 +555,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           ]
         : []),
       THREAD_ROW_MENU_ACTIONS[0]!,
+      THREAD_ROW_MENU_ACTIONS[1]!,
       ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
@@ -558,7 +563,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
       ...(props.titleUpdatesSupported
         ? [{ id: "title-updates", title: "Title updates…", image: "textformat" }]
         : []),
-      THREAD_ROW_MENU_ACTIONS[1]!,
+      THREAD_ROW_MENU_ACTIONS[2]!,
     ],
     [
       props.titleRegenerationSupported,
@@ -581,6 +586,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
       if (nativeEvent.event === "new-thread-on-branch") onNewThreadOnBranch(thread);
       if (nativeEvent.event === "archive") handleArchive();
       if (nativeEvent.event === "title-updates") onOpenTitleUpdates(thread);
+      if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "delete") handleDelete();
     },
@@ -588,6 +594,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
       handleArchive,
       handleDelete,
       handleRegenerateTitle,
+      handleRename,
       onNewThreadOnBranch,
       onOpenTitleUpdates,
       thread,
