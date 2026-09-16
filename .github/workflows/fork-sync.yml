@@ -23,6 +23,10 @@ jobs:
           ref: feat/automatic-thread-titles
           fetch-depth: 0
           persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
 
       - name: Test sync safeguards
         run: python3 .github/scripts/test-fork-sync.py
