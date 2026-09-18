@@ -32,7 +32,9 @@ jobs:
           git init .
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
           git sparse-checkout set --no-cone '/*' '!/.repos/'
-          git fetch --no-tags --no-recurse-submodules --filter=blob:none origin \
+          # Merge needs blobs from upstream that may not be fetchable from the
+          # fork's promisor remote. Keep a full object database, sparse worktree.
+          git fetch --no-tags --no-recurse-submodules origin \
             '+refs/heads/main:refs/remotes/origin/main' \
             '+refs/heads/feat/automatic-thread-titles:refs/remotes/origin/feat/automatic-thread-titles'
           git checkout --force -B feat/automatic-thread-titles \
