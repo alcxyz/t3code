@@ -87,6 +87,7 @@ function makeHarness(
   const queries = ProjectionSnapshotQuery.of({
     getUserInputActivity: unused,
     listActivitiesByKind: unused,
+    getDeletedWorktreeThreads: unused,
     getCommandReadModel: unused,
     getSnapshot: unused,
     getShellSnapshot: unused,

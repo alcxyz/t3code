@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: automatic-title-fork-sync
@@ -24,8 +24,9 @@ jobs:
       # invoking that submodule cleanup path.
       - name: Check out title fork
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
         run: |
+          : "${GH_TOKEN:?Configure FORK_SYNC_TOKEN with repository contents and workflows write access}"
           export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/fork-sync-checkout.gitconfig"
           : > "$GIT_CONFIG_GLOBAL"
           gh auth setup-git
@@ -46,7 +47,7 @@ jobs:
       - name: Prepare upstream merge
         id: prepare
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
           FORCE_VALIDATION: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           gh auth setup-git
@@ -75,7 +76,7 @@ jobs:
       - name: Publish validated feature branch
         if: steps.prepare.outputs.validate == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
           EXPECTED_FEATURE_HEAD: ${{ steps.prepare.outputs.feature_head }}
         run: bash .github/scripts/fork-sync.sh publish
 

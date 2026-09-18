@@ -79,10 +79,18 @@ it.layer(NodeSqliteClient.layerMemory())("fork title-state compatibility", (it) 
       yield* runMigrations();
 
       const migrations = yield* sql<{ readonly id: number; readonly name: string }>`
-        SELECT migration_id AS id, name FROM effect_sql_migrations ORDER BY migration_id DESC LIMIT 1
+        SELECT migration_id AS id, name
+        FROM effect_sql_migrations
+        WHERE migration_id = 52 OR name = 'ProjectionThreadTitleState'
+        ORDER BY migration_id
       `;
       assert.deepEqual(migrations, [{ id: 52, name: "ProjectionThreadTitleState" }]);
-      assert.deepEqual(migrationManifest.at(-1), [52, "ProjectionThreadTitleState"]);
+      assert.deepEqual(
+        migrationManifest.filter(
+          ([id, name]) => id === 52 || name === "ProjectionThreadTitleState",
+        ),
+        [[52, "ProjectionThreadTitleState"]],
+      );
 
       const rows = yield* sql<{
         readonly id: string;
@@ -154,7 +162,12 @@ it.layer(NodeSqliteClient.layerMemory())("fork migration ledger compatibility", 
       const ledger = yield* sql<{ readonly id: number; readonly name: string }>`
         SELECT migration_id AS id, name
         FROM effect_sql_migrations
-        WHERE migration_id >= 50
+        WHERE migration_id BETWEEN 50 AND 52
+          OR name IN (
+            'ProjectionThreadPullRequests',
+            'ProjectionThreadMessageContext',
+            'ProjectionThreadTitleState'
+          )
         ORDER BY migration_id
       `;
       assert.deepEqual(ledger, [

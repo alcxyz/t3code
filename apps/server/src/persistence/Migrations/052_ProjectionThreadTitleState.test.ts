@@ -36,7 +36,14 @@ for (const bootstrapped of [false, true]) {
         `;
         assert.deepEqual(rows, [{ state: bootstrapped ? state : null }]);
         const ledger = yield* sql<{ readonly id: number; readonly name: string }>`
-          SELECT migration_id AS id, name FROM effect_sql_migrations WHERE migration_id >= 50
+          SELECT migration_id AS id, name
+          FROM effect_sql_migrations
+          WHERE migration_id BETWEEN 50 AND 52
+            OR name IN (
+              'ProjectionThreadPullRequests',
+              'ProjectionThreadMessageContext',
+              'ProjectionThreadTitleState'
+            )
           ORDER BY migration_id
         `;
         assert.deepEqual(ledger, [
