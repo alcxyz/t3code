@@ -879,15 +879,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const needsThread = settings.automaticThreadTitles || browserOverridden || deviceOverridden;
       const thread =
         needsThread && Option.isSome(projectionQuery)
-          ? yield* projectionQuery.value
-              .getThreadShellById(threadId)
-              .pipe(
-                Effect.catch((cause) =>
-                  Effect.logWarning("Could not resolve the thread for optional MCP capabilities.", {
-                    cause,
-                  }).pipe(Effect.as(Option.none())),
-                ),
-              )
+          ? yield* projectionQuery.value.getThreadShellById(threadId).pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("Could not resolve the thread for optional MCP capabilities.", {
+                  cause,
+                }).pipe(Effect.as(Option.none())),
+              ),
+            )
           : Option.none();
       const environmentAccess = {
         browser: settings.enableAgentBrowserAccess,
@@ -2372,7 +2370,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     // Continuation is project-scopable, so decide it per session's project;
     // without orchestration the environment value is all there is.
     const stopSettings = yield* serverSettings.getSettings.pipe(
-      Effect.map(Option.some),
+      Effect.asSome,
       Effect.orElseSucceed(() => Option.none<ServerSettingsValue>()),
     );
     const continueAfterRestartFor = Effect.fn("continueAfterRestartFor")(function* (
