@@ -93,6 +93,7 @@ function makeHarness(
     getShellSnapshot: unused,
     getArchivedShellSnapshot: unused,
     searchThreads: unused,
+    listThreadsWithPullRequests: unused,
     getSnapshotSequence: unused,
     getCounts: unused,
     getEventReplayStats: unused,
