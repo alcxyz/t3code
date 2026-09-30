@@ -13,6 +13,7 @@ import { LegendList } from "@legendapp/list/react-native";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useAtomValue } from "@effect/atom-react";
 import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent } from "react-native";
 import { Platform, StyleSheet, TextInput, View } from "react-native";
@@ -130,6 +131,7 @@ function NativeSidebarContainer(props: ThreadNavigationSidebarProps) {
 function ThreadNavigationSidebarPane(
   props: ThreadNavigationSidebarProps & { readonly nativeChrome: boolean },
 ) {
+  const navigation = useNavigation();
   const { themeVariables: materialTheme } = useAppearancePreferences();
   const drawerColor = materialTheme["--color-drawer"];
 
@@ -373,6 +375,24 @@ function ThreadNavigationSidebarPane(
     }
     return supported;
   }, [serverConfigs]);
+  const titleUpdatesEnvironmentIds = useMemo(() => {
+    const supported = new Set<EnvironmentId>();
+    for (const [environmentId, config] of serverConfigs) {
+      if (config.environment.capabilities.threadTitleUpdates === true) {
+        supported.add(environmentId);
+      }
+    }
+    return supported;
+  }, [serverConfigs]);
+  const handleOpenTitleUpdates = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      navigation.navigate("ThreadTitleUpdates", {
+        environmentId: String(thread.environmentId),
+        threadId: String(thread.id),
+      });
+    },
+    [navigation],
+  );
   const machineByEnvironmentId = useMemo(
     () =>
       new Map(
@@ -773,7 +793,9 @@ function ThreadNavigationSidebarPane(
               onArchiveThread={archiveThread}
               onRenameThread={renameThread}
               onRegenerateThreadTitle={regenerateThreadTitle}
+              onOpenTitleUpdates={handleOpenTitleUpdates}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+              titleUpdatesSupported={titleUpdatesEnvironmentIds.has(thread.environmentId)}
               settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
               onSettleThread={settleThread}
               snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
@@ -835,6 +857,7 @@ function ThreadNavigationSidebarPane(
       confirmDeletePendingTask,
       confirmDeleteThread,
       handleSelectThread,
+      handleOpenTitleUpdates,
       handleSwipeableClose,
       handleSwipeableWillOpen,
       machineByEnvironmentId,
@@ -857,6 +880,7 @@ function ThreadNavigationSidebarPane(
       props.width,
       savedConnectionsById,
       titleRegenerationEnvironmentIds,
+      titleUpdatesEnvironmentIds,
       settleThread,
       settlementEnvironmentIds,
       showMoreSettled,

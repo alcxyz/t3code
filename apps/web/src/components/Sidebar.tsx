@@ -133,6 +133,7 @@ import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
   readThreadShell,
+  readEnvironmentSupportsTitleUpdates,
   useAllEnvironmentProjectSnapshotsReady,
   useProjects,
   useThreadShells,
@@ -152,6 +153,7 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat"
 import type { SidebarThreadSummary } from "../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
+import { openThreadTitleUpdates } from "../threadTitleUpdatesPanel";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
@@ -205,6 +207,7 @@ import {
   ThreadPullRequestBadgeControl,
   ThreadPullRequestsMiniList,
   ThreadWorktreeIndicator,
+  ThreadRenameIndicator,
   prStatusIndicator,
   resolveThreadPullRequestBadge,
   terminalStatusFromRunningIds,
@@ -982,6 +985,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Pinned threads show the same pin marker in active, settled, and snoozed
   // rows. The marker can unpin the thread when the server supports pinning.
   pinningSupported: boolean;
+  titleUpdatesSupported: boolean;
   isPinned: boolean;
   // Present on rows whose server supports every drop outcome: dnd-kit
   // sortable bag applied to the row root so the whole row drags (the
@@ -1358,6 +1362,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     },
     [onSnooze, threadRef],
   );
+  const handleTitleUpdatesClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openThreadTitleUpdates(threadRef);
+    },
+    [threadRef],
+  );
   // While the snooze popover is open the pointer leaves the row, which
   // would fade the hover actions out from under the open menu. Pin them and
   // suppress the row tooltip so its portal cannot overlap the popover.
@@ -1640,6 +1652,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             </span>
             {draftIndicator}
             {title}
+            <ThreadRenameIndicator
+              thread={thread}
+              onClick={props.titleUpdatesSupported ? handleTitleUpdatesClick : undefined}
+            />
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -1938,8 +1954,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-            <div className="mt-1 flex min-w-0">
+            <div className="mt-1 flex min-w-0 items-center gap-1">
               {title}
+              <ThreadRenameIndicator
+                thread={thread}
+                onClick={props.titleUpdatesSupported ? handleTitleUpdatesClick : undefined}
+              />
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
@@ -4067,6 +4087,7 @@ export default function Sidebar() {
         const supportsTitleRegeneration =
           serverConfigs.get(thread.environmentId)?.environment.capabilities
             .threadTitleRegeneration === true;
+        const supportsTitleUpdates = readEnvironmentSupportsTitleUpdates(thread.environmentId);
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
@@ -4105,6 +4126,7 @@ export default function Sidebar() {
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
+                titleUpdates: supportsTitleUpdates,
               },
               snoozePresets,
             }),
@@ -4193,6 +4215,9 @@ export default function Sidebar() {
           }
           case "rename":
             startThreadRename(threadRef, thread.title);
+            return;
+          case "title-updates":
+            openThreadTitleUpdates(threadRef);
             return;
           case "regenerate-title": {
             if (isRegeneratingTitle) return;
@@ -4745,6 +4770,9 @@ export default function Sidebar() {
                               serverConfigs.get(thread.environmentId)?.environment.capabilities
                                 .threadPinning === true
                             }
+                            titleUpdatesSupported={readEnvironmentSupportsTitleUpdates(
+                              thread.environmentId,
+                            )}
                             isPinned={thread.pinnedAt != null}
                             sortable={sortable}
                             dropVerb={

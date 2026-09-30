@@ -40,6 +40,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { buildThreadTitleInstructions } from "../RuntimeInstructions.ts";
 import {
   buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
@@ -199,6 +200,8 @@ export interface CodexSessionRuntimeSendTurnInput {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined;
   readonly interactionMode?: ProviderInteractionMode;
+  readonly currentThreadTitle?: string;
+  readonly browserToolsAvailable?: boolean | T3CodeToolAvailability;
 }
 
 export interface CodexThreadTurnSnapshot {
@@ -633,12 +636,20 @@ export function buildTurnStartParams(input: {
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly interactionMode?: ProviderInteractionMode;
   /** Defaults to true so callers that predate the agent-access gate are unchanged. */
+  readonly currentThreadTitle?: string;
   readonly browserToolsAvailable?: boolean | T3CodeToolAvailability;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
 > {
   const turnInput: Array<EffectCodexSchema.V2TurnStartParams__UserInput> = [];
+  // Send turn-specific title guidance as input, as the Claude adapter does.
+  // Codex omits unchanged additionalContext entries on later turns, while the
+  // title reminder must be reconsidered at every natural stopping point.
+  const titleInstructions = buildThreadTitleInstructions(input.currentThreadTitle);
+  if (titleInstructions) {
+    turnInput.push({ type: "text", text: titleInstructions });
+  }
   if (input.prompt) {
     turnInput.push({
       type: "text",
@@ -2577,10 +2588,10 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own credential rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: configuredMcpToolAvailability(
-              options.appServerArgs,
-              options.mcpCapabilities,
-            ),
+            browserToolsAvailable:
+              input.browserToolsAvailable ??
+              configuredMcpToolAvailability(options.appServerArgs, options.mcpCapabilities),
+            ...(input.currentThreadTitle ? { currentThreadTitle: input.currentThreadTitle } : {}),
           });
           yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
           const rawResponse = yield* client.raw.request("turn/start", params);

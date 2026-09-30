@@ -3,6 +3,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 
 import {
   filterAvailableSettingsSearchItems,
+  getAutomaticThreadTitlesSearchAvailability,
   getSettingsSearchTargetScope,
   getThreadAutoSettlementSearchAvailability,
   isSettingsOverviewVisible,
@@ -158,6 +159,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
+      hasAutomaticThreadTitles: false,
     });
 
     const gatedIds = new Set<string>([
@@ -175,6 +177,13 @@ describe("searchSettings", () => {
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
       "days-before-auto-settle",
+      "automatic-thread-titles",
+      "automatic-thread-title-frequency",
+      "automatic-thread-title-minimum-age",
+      "automatic-thread-title-minimum-turns",
+      "automatic-thread-title-cooldown",
+      "automatic-thread-title-fresh-turns",
+      "automatic-thread-title-rolling-limit",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
   });
@@ -188,6 +197,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
+      hasAutomaticThreadTitles: false,
     };
     const itemIds = (macAvailable: boolean) =>
       filterAvailableSettingsSearchItems({
@@ -207,6 +217,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
+      hasAutomaticThreadTitles: false,
     };
     const remoteOnly = filterAvailableSettingsSearchItems({
       ...availability,
@@ -230,6 +241,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: true,
+      hasAutomaticThreadTitles: false,
     });
 
     expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([
@@ -237,6 +249,37 @@ describe("searchSettings", () => {
       "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
+  });
+
+  it("shows automatic thread titles only when the server supports the setting", () => {
+    const available = filterAvailableSettingsSearchItems({
+      hasCloudPublicConfig: false,
+      hasEnvironment: false,
+      hasProviderSettingsEnvironment: false,
+      hasMacProviderSettingsEnvironment: false,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+      hasAutomaticThreadTitles: true,
+    });
+
+    expect(available.map((item) => item.id)).toContain("automatic-thread-titles");
+    expect(available.map((item) => item.id)).toContain("automatic-thread-title-frequency");
+    expect(searchSettings("completed turns", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-minimum-turns",
+    );
+    expect(searchSettings("minimum age", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-minimum-age",
+    );
+    expect(searchSettings("cooldown", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-cooldown",
+    );
+    expect(searchSettings("fresh turns", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-fresh-turns",
+    );
+    expect(searchSettings("rolling limit", available).map((item) => item.id)).toContain(
+      "automatic-thread-title-rolling-limit",
+    );
   });
 
   it("finds keybinding commands by label, command id, and default key", () => {
@@ -357,6 +400,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: true,
+      hasAutomaticThreadTitles: false,
     });
     expect(searchSettings("writing style", available)[0]?.id).toBe("source-control-writing-style");
     expect(searchSettings("auto-settle", available)).toHaveLength(3);
@@ -372,6 +416,20 @@ describe("settings search targets", () => {
     expect(getSettingsSearchTargetScope(targetId)).toMatchObject({
       scope: "project-defaults",
       requiresThreadAutoSettlement: true,
+    });
+  });
+
+  it.each([
+    "automatic-thread-titles",
+    "automatic-thread-title-frequency",
+    "automatic-thread-title-minimum-age",
+    "automatic-thread-title-minimum-turns",
+    "automatic-thread-title-cooldown",
+    "automatic-thread-title-fresh-turns",
+    "automatic-thread-title-rolling-limit",
+  ])("retains the automatic-title capability requirement for %s", (targetId) => {
+    expect(getSettingsSearchTargetScope(targetId)).toMatchObject({
+      requiresAutomaticThreadTitles: true,
     });
   });
 
@@ -452,6 +510,7 @@ describe("auto-settlement search availability", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,
+      hasAutomaticThreadTitles: false,
     });
     expect(searchSettings("auto-settle", items).map((item) => item.id)).toEqual([
       "auto-settle-inactive-threads",
@@ -518,6 +577,28 @@ describe("auto-settlement search availability", () => {
       }),
     ).toEqual({ eligibleEnvironmentIds: [], isTargetAvailable: false });
     expect(getThreadAutoSettlementSearchAvailability([]).eligibleEnvironmentIds).toEqual([]);
+  });
+});
+
+describe("automatic-title search availability", () => {
+  const capable = {
+    environmentId: EnvironmentId.make("title-capable"),
+    connection: { phase: "connected" as const },
+    serverConfig: { environment: { capabilities: { automaticThreadTitles: true } } },
+  };
+  const unsupported = {
+    environmentId: EnvironmentId.make("title-unsupported"),
+    connection: { phase: "connected" as const },
+    serverConfig: { environment: { capabilities: { automaticThreadTitles: false } } },
+  };
+
+  it("offers a capable environment when the selected aggregate has mixed support", () => {
+    expect(
+      getAutomaticThreadTitlesSearchAvailability([capable, unsupported], {
+        kind: "all",
+        environmentIds: [capable.environmentId, unsupported.environmentId],
+      }),
+    ).toEqual({ eligibleEnvironmentIds: [capable.environmentId], isTargetAvailable: false });
   });
 });
 

@@ -50,15 +50,35 @@ describe("buildThreadActionMenuItems", () => {
     ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
   });
 
+  it("shows title updates only when the environment advertises support", () => {
+    expect(
+      ids({
+        ...baseState,
+        supports: { ...baseState.supports, titleUpdates: true },
+      }),
+    ).toContain("title-updates");
+    expect(ids(baseState)).not.toContain("title-updates");
+    expect(
+      ids({
+        ...baseState,
+        supports: { ...baseState.supports, titleUpdates: false },
+      }),
+    ).not.toContain("title-updates");
+  });
+
   it("groups project settings with utility actions before archive", () => {
-    const items = buildThreadActionMenuItems(baseState);
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      supports: { ...baseState.supports, titleUpdates: true },
+    });
     const copyIndex = items.findIndex((item) => item.id === "copy");
-    expect(items[copyIndex + 1]).toMatchObject({
+    expect(items[copyIndex + 1]).toMatchObject({ id: "title-updates" });
+    expect(items[copyIndex + 2]).toMatchObject({
       id: "project-settings",
       label: "Project settings",
       icon: "settings",
     });
-    expect(items[copyIndex + 2]?.id).toBe("archive");
+    expect(items[copyIndex + 3]?.id).toBe("archive");
   });
 
   it("offers project filtering only for surfaces with a scoped thread list", () => {

@@ -34,6 +34,7 @@ import {
   OrchestrationThreadSettleBlockedError,
   type OrchestrationCommandRejection,
 } from "./Errors.ts";
+import { allowsAutomaticThreadTitleUpdate } from "./ThreadTitlePolicy.ts";
 import {
   listThreadsByProjectId,
   requireActiveProjectWorkspaceRootAbsent,
@@ -1018,6 +1019,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.title !== undefined
             ? {
                 title: command.title,
+                titleAutoRenamedAt: null,
                 titleState: {
                   source: "manual" as const,
                   version: command.commandId,
@@ -1027,6 +1029,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(command.regenerateTitle === true
             ? {
+                titleAutoRenamedAt: null,
                 titleState: {
                   source: "generated" as const,
                   version: command.commandId,
@@ -1051,6 +1054,46 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.linkedPullRequest !== undefined
             ? { linkedPullRequest: command.linkedPullRequest }
             : {}),
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "thread.title.restore": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (
+        thread.deletedAt !== null ||
+        thread.titleRegeneration != null ||
+        (thread.titleState?.version ?? null) !== command.expectedVersion
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} changed before its title could be restored`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.meta-updated",
+        payload: {
+          threadId: command.threadId,
+          title: command.title,
+          titleRestoration: true as const,
+          titleAutoRenamedAt: null,
+          titleState: {
+            source: "manual" as const,
+            version: command.commandId,
+            needsRefinement: false,
+          },
           updatedAt: occurredAt,
         },
       };
@@ -1239,6 +1282,46 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           branchPullRequest: command.branchPullRequest,
           ...(command.linkedPullRequest !== undefined
             ? { linkedPullRequest: command.linkedPullRequest }
+            : {}),
+          updatedAt: thread.updatedAt,
+        },
+      };
+    }
+
+    case "thread.title.automatic.update": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const occurredAt = yield* nowIso;
+      if (
+        !allowsAutomaticThreadTitleUpdate(thread, occurredAt) ||
+        thread.titleState?.source !== "generated" ||
+        thread.titleState.version !== command.expectedVersion ||
+        thread.titleRegeneration != null
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} no longer permits this automatic title update`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.meta-updated",
+        payload: {
+          threadId: command.threadId,
+          ...(thread.title !== command.title
+            ? {
+                title: command.title,
+                titleState: {
+                  source: "generated" as const,
+                  version: command.commandId,
+                  needsRefinement: false,
+                },
+                titleAutoRenamedAt: occurredAt,
+              }
             : {}),
           updatedAt: thread.updatedAt,
         },
