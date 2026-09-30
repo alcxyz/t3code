@@ -109,6 +109,9 @@ PY
       candidate=$(printf 'chore(fork): start %s from %s\n\nApply automatic titles to the published %s release.\n' \
         "$channel" "$release_tag" "$channel" | git commit-tree "$tree" -p "$upstream_head")
     fi
+    # Restore the source index first so reset removes source-only tracked files
+    # when a stable release predates the declared feature baseline.
+    git read-tree "$feature_head"
     git reset --hard "$candidate"
     printf 'validate=true\nfeature_head=%s\nprevious_head=%s\ncandidate_head=%s\nrelease_tag=%s\nupstream_head=%s\n' \
       "$feature_head" "$previous" "$candidate" "$release_tag" "$upstream_head" >> "$GITHUB_OUTPUT"

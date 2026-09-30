@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
 FEATURE = "feat/automatic-thread-titles"
+sys.dont_write_bytecode = True
 
 
 class ForkSyncTests(unittest.TestCase):
@@ -191,6 +193,26 @@ class ForkSyncTests(unittest.TestCase):
         self.succeeded(self.run_sync("prepare", "stable"))
         self.assertEqual(self.outputs(), {"validate": "false"})
         self.assertEqual(self.remote_rev("fork/stable"), stable["candidate_head"])
+
+    def test_feature_baseline_can_be_newer_than_stable_release(self):
+        newer = self.advance_upstream()
+        self.tag_release("v1.0.1-nightly.20260930.2", newer, prerelease=True)
+        self.git("fetch", "upstream", "main", cwd=self.source)
+        self.git("merge", "--no-edit", "upstream/main", cwd=self.source)
+        self.control_metadata(newer)
+        self.git("add", ".github/fork-source.json", cwd=self.source)
+        self.git("commit", "-m", "record newer baseline", cwd=self.source)
+        self.git("push", "origin", FEATURE, cwd=self.source)
+        stable = self.promote("stable")
+        self.assertEqual(stable["upstream_head"], self.base)
+        self.assertEqual(
+            self.git("show", "fork/stable:feature.txt", cwd=self.origin).stdout,
+            "automatic titles\n",
+        )
+        self.assertNotEqual(
+            self.git("cat-file", "-e", "fork/stable:upstream.txt",
+                     cwd=self.origin, check=False).returncode, 0
+        )
 
     def test_conflict_keeps_channel_unchanged(self):
         old = self.promote("stable")["candidate_head"]
