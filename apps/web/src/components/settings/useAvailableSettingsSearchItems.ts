@@ -59,6 +59,11 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
         }),
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
+        hasAutomaticThreadTitles: environments.some(
+          (environment) =>
+            environment.connection.phase === "connected" &&
+            environment.serverConfig?.environment.capabilities.automaticThreadTitles === true,
+        ),
       }),
     [
       canManageLocalBackend,

@@ -440,6 +440,7 @@ export function projectEvent(
             id: payload.threadId,
             projectId: payload.projectId,
             title: payload.title,
+            titleAutoRenamedAt: null,
             modelSelection: payload.modelSelection,
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
@@ -641,6 +642,9 @@ export function projectEvent(
             ...nextBase,
             threads: updateThread(nextBase.threads, payload.threadId, {
               ...(payload.title !== undefined ? { title: payload.title } : {}),
+              ...(payload.titleAutoRenamedAt !== undefined
+                ? { titleAutoRenamedAt: payload.titleAutoRenamedAt }
+                : {}),
               ...(payload.titleState !== undefined ? { titleState: payload.titleState } : {}),
               ...(payload.titleRegeneration !== undefined
                 ? { titleRegeneration: payload.titleRegeneration }

@@ -30,6 +30,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { ThreadTitleToolkitHandlersLive } from "./toolkits/threadTitle/handlers.ts";
+import { ThreadTitleToolkit } from "./toolkits/threadTitle/tools.ts";
 import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import {
@@ -667,8 +669,13 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
+export const ThreadTitleToolkitRegistrationLive = McpServer.toolkit(ThreadTitleToolkit).pipe(
+  Layer.provide(ThreadTitleToolkitHandlersLive),
+);
+
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
+  ThreadTitleToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

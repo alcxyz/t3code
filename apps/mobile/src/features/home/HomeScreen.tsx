@@ -15,8 +15,8 @@ import {
   resolveEnvironmentMachineKind,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
-import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -224,6 +224,7 @@ function HomeTopContentSpacer() {
 /* ─── Main screen ────────────────────────────────────────────────────── */
 
 export function HomeScreen(props: HomeScreenProps) {
+  const navigation = useNavigation();
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const insets = useSafeAreaInsets();
@@ -553,6 +554,24 @@ export function HomeScreen(props: HomeScreenProps) {
     }
     return supported;
   }, [serverConfigs]);
+  const titleUpdatesEnvironmentIds = useMemo(() => {
+    const supported = new Set<EnvironmentId>();
+    for (const [environmentId, config] of serverConfigs) {
+      if (config.environment.capabilities.threadTitleUpdates === true) {
+        supported.add(environmentId);
+      }
+    }
+    return supported;
+  }, [serverConfigs]);
+  const handleOpenTitleUpdates = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      navigation.navigate("ThreadTitleUpdates", {
+        environmentId: String(thread.environmentId),
+        threadId: String(thread.id),
+      });
+    },
+    [navigation],
+  );
   const machineByEnvironmentId = useMemo(
     () =>
       new Map(
@@ -794,7 +813,9 @@ export function HomeScreen(props: HomeScreenProps) {
           onArchiveThread={props.onArchiveThread}
           onRenameThread={handleRenameThread}
           onRegenerateThreadTitle={handleRegenerateThreadTitle}
+          onOpenTitleUpdates={handleOpenTitleUpdates}
           titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+          titleUpdatesSupported={titleUpdatesEnvironmentIds.has(thread.environmentId)}
           settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
           onSettleThread={handleSettleThread}
           snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
@@ -826,6 +847,7 @@ export function HomeScreen(props: HomeScreenProps) {
       handleMoveThread,
       handlePinThread,
       handleRegenerateThreadTitle,
+      handleOpenTitleUpdates,
       handleRenameThread,
       handleSettleThread,
       handleSnoozeThread,
@@ -851,6 +873,7 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozeEnvironmentIds,
       threadSearchMatchByKey,
       titleRegenerationEnvironmentIds,
+      titleUpdatesEnvironmentIds,
       toggleSettledShelf,
       toggleSnoozedShelf,
       v2ProjectTitleByProjectKey,

@@ -1,7 +1,10 @@
 import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { planAutoSettleSettingsSync } from "./autoSettleSettingsSync";
+import {
+  planAutomaticTitleSettingsSync,
+  planAutoSettleSettingsSync,
+} from "./autoSettleSettingsSync";
 
 const reference = {
   environmentId: EnvironmentId.make("reference"),
@@ -88,5 +91,40 @@ describe("auto-settle settings sync", () => {
     expect(planAutoSettleSettingsSync(projectReference, [otherCheckout]).mismatches).toEqual([
       otherCheckout,
     ]);
+  });
+});
+
+describe("automatic title settings sync", () => {
+  it("copies only automatic-title preferences to mismatched environments", () => {
+    const target = {
+      environmentId: EnvironmentId.make("remote"),
+      label: "Remote",
+      settings: {
+        ...reference.settings,
+        automaticThreadTitles: false,
+        automaticThreadTitleRenamePolicy: "rare" as const,
+        newWorktreesStartFromOrigin: true,
+      },
+    };
+
+    const plan = planAutomaticTitleSettingsSync(reference, [target]);
+    const updated = { ...target.settings, ...plan.patch };
+
+    expect(plan.mismatches).toEqual([target]);
+    expect(updated.automaticThreadTitles).toBe(reference.settings.automaticThreadTitles);
+    expect(updated.automaticThreadTitleRenamePolicy).toBe(
+      reference.settings.automaticThreadTitleRenamePolicy,
+    );
+    expect(updated.newWorktreesStartFromOrigin).toBe(true);
+  });
+
+  it("ignores differences outside automatic-title preferences", () => {
+    const target = {
+      environmentId: EnvironmentId.make("remote"),
+      label: "Remote",
+      settings: { ...reference.settings, newWorktreesStartFromOrigin: true },
+    };
+
+    expect(planAutomaticTitleSettingsSync(reference, [target]).mismatches).toEqual([]);
   });
 });

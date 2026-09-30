@@ -1646,6 +1646,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                       harness: "Grok",
                       model: displayModel,
                       reasoningEffort: normalizeGrokReasoningEffort(requestedTurnReasoningEffort),
+                      currentThreadTitle: input.runtimeInstructions?.currentThreadTitle,
                     });
               for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
                 yield* Effect.yieldNow;

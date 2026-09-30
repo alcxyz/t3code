@@ -1,0 +1,89 @@
+name: Sync and validate title fork releases
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    if: github.repository == 'alcxyz/t3code'
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, nightly]
+    concurrency:
+      group: automatic-title-fork-sync-${{ matrix.channel }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FEATURE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'feat/automatic-thread-titles' }}
+    steps:
+      # checkout recursively inspects vendored gitlinks outside root .gitmodules.
+      # Fetch directly, with a full object database and sparse working tree.
+      - name: Check out control branch
+        env:
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
+        run: |
+          : "${GH_TOKEN:?Configure FORK_SYNC_TOKEN with repository contents and workflows write access}"
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/fork-sync-checkout.gitconfig"
+          : > "$GIT_CONFIG_GLOBAL"
+          gh auth setup-git
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch --no-tags --no-recurse-submodules origin \
+            "+refs/heads/$FEATURE_BRANCH:refs/remotes/origin/$FEATURE_BRANCH"
+          git checkout --force -B "$FEATURE_BRANCH" "refs/remotes/origin/$FEATURE_BRANCH"
+          cp .github/scripts/fork-sync.sh .github/scripts/fork-release.py \
+            .github/scripts/validate-title-fork.sh "$RUNNER_TEMP/"
+
+      - name: Test sync safeguards
+        run: python3 .github/scripts/test-fork-sync.py
+
+      - name: Prepare release overlay
+        id: prepare
+        env:
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
+          FORCE_VALIDATION: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          gh auth setup-git
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          bash "$RUNNER_TEMP/fork-sync.sh" prepare "${{ matrix.channel }}"
+
+      - name: Set up Vite+
+        if: steps.prepare.outputs.validate == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Install native build libraries
+        if: steps.prepare.outputs.validate == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config ripgrep
+
+      - name: Validate source and desktop build
+        if: steps.prepare.outputs.validate == 'true'
+        run: bash "$RUNNER_TEMP/validate-title-fork.sh"
+
+      - name: Publish validated channel
+        if: steps.prepare.outputs.validate == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
+          EXPECTED_FEATURE_HEAD: ${{ steps.prepare.outputs.feature_head }}
+          EXPECTED_PREVIOUS_HEAD: ${{ steps.prepare.outputs.previous_head }}
+          EXPECTED_CANDIDATE_HEAD: ${{ steps.prepare.outputs.candidate_head }}
+        run: bash "$RUNNER_TEMP/fork-sync.sh" publish "${{ matrix.channel }}"
+
+      - name: Report blocked sync
+        if: failure()
+        run: |
+          echo 'Fork channel sync failed. Review overlay or validation logs before retrying.' >> "$GITHUB_STEP_SUMMARY"
