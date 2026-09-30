@@ -984,40 +984,6 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
-const AutomaticThreadTitleRenamePolicy = Schema.Literals(["rare", "balanced", "often", "custom"]);
-export const MIN_AUTOMATIC_TITLE_RENAME_COUNT = 1;
-export const MAX_AUTOMATIC_TITLE_RENAME_COUNT = 100;
-export const MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS = 1;
-export const MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS = 720;
-export const MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES = 1;
-export const MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES = 43200;
-export const MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS = 1;
-export const MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS = 100;
-const AutomaticThreadTitleRenameMinAgeMinutes = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
-    maximum: MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
-  }),
-);
-const AutomaticThreadTitleRenameMinCompletedTurns = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
-    maximum: MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
-  }),
-);
-const AutomaticThreadTitleRenameMaxCount = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_AUTOMATIC_TITLE_RENAME_COUNT,
-    maximum: MAX_AUTOMATIC_TITLE_RENAME_COUNT,
-  }),
-);
-const AutomaticThreadTitleRenameWindowHours = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
-    maximum: MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
-  }),
-);
-
 /**
  * Server settings a project may override. Every other server setting is
  * environment-wide: providers, keybindings, observability, device hosts,
@@ -1151,41 +1117,16 @@ export const ServerSettings = Schema.Struct({
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
-  automaticThreadTitles: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  automaticThreadTitleRenamePolicy: AutomaticThreadTitleRenamePolicy.pipe(
-    Schema.withDecodingDefault(Effect.succeed("balanced" as const)),
-  ),
-  automaticThreadTitleRenameMaxCount: AutomaticThreadTitleRenameMaxCount.pipe(
-    Schema.withDecodingDefault(Effect.succeed(1)),
-  ),
-  automaticThreadTitleRenameWindowHours: AutomaticThreadTitleRenameWindowHours.pipe(
-    Schema.withDecodingDefault(Effect.succeed(12)),
-  ),
-  automaticThreadTitleRenameMinAgeMinutes: AutomaticThreadTitleRenameMinAgeMinutes.pipe(
-    Schema.withDecodingDefault(Effect.succeed(120)),
-  ),
-  automaticThreadTitleRenameMinCompletedTurns: AutomaticThreadTitleRenameMinCompletedTurns.pipe(
-    Schema.withDecodingDefault(Effect.succeed(5)),
-  ),
-  automaticThreadTitleRenameCooldownMinutes: AutomaticThreadTitleRenameMinAgeMinutes.pipe(
-    Schema.withDecodingDefault(Effect.succeed(45)),
-  ),
-  automaticThreadTitleRenameMinFreshTurns: AutomaticThreadTitleRenameMinCompletedTurns.pipe(
-    Schema.withDecodingDefault(Effect.succeed(2)),
-  ),
-  automaticThreadTitleRenameRollingLimitEnabled: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
+  /** Periodically regenerate generated thread titles as the conversation moves on. */
+  automaticThreadTitleUpdates: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
-   * withholds the preview MCP capability and its prompt text. If no other
-   * `t3-code` feature is enabled, the shared endpoint is omitted when the
-   * provider session starts. Automatic titles may keep that endpoint attached,
-   * but do not grant any `preview_*` tool. A provider session started without
-   * any MCP feature waits until its next session to attach the endpoint. Once
-   * attached, the endpoint can become dormant and regain capabilities as
-   * settings change without restarting the provider. The user's own browser
-   * panel is unaffected — this gates agent access only.
+   * withholds the MCP credential, so the `t3-code` server (and with it every
+   * `preview_*` tool) is never attached to a provider session, and the prompt
+   * text describing those tools is dropped along with them. The user's own
+   * browser panel is unaffected — this gates agent access only.
    *
    * Server-authoritative rather than client-local: tool injection and prompt
    * construction both happen on the server, and the answer must not differ
@@ -1555,23 +1496,7 @@ export const ServerSettingsPatch = Schema.Struct({
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
-  automaticThreadTitles: Schema.optionalKey(Schema.Boolean),
-  automaticThreadTitleRenamePolicy: Schema.optionalKey(AutomaticThreadTitleRenamePolicy),
-  automaticThreadTitleRenameMaxCount: Schema.optionalKey(AutomaticThreadTitleRenameMaxCount),
-  automaticThreadTitleRenameWindowHours: Schema.optionalKey(AutomaticThreadTitleRenameWindowHours),
-  automaticThreadTitleRenameMinAgeMinutes: Schema.optionalKey(
-    AutomaticThreadTitleRenameMinAgeMinutes,
-  ),
-  automaticThreadTitleRenameMinCompletedTurns: Schema.optionalKey(
-    AutomaticThreadTitleRenameMinCompletedTurns,
-  ),
-  automaticThreadTitleRenameCooldownMinutes: Schema.optionalKey(
-    AutomaticThreadTitleRenameMinAgeMinutes,
-  ),
-  automaticThreadTitleRenameMinFreshTurns: Schema.optionalKey(
-    AutomaticThreadTitleRenameMinCompletedTurns,
-  ),
-  automaticThreadTitleRenameRollingLimitEnabled: Schema.optionalKey(Schema.Boolean),
+  automaticThreadTitleUpdates: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),

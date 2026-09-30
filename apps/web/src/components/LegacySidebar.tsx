@@ -19,7 +19,6 @@ import {
   terminalStatusFromRunningIds,
   synchronizeTerminalPulse,
   ThreadStatusLabel,
-  ThreadRenameIndicator,
   ThreadWorktreeIndicator,
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
@@ -87,7 +86,6 @@ import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
   readThreadShell,
-  readEnvironmentSupportsTitleUpdates,
   useProjects,
   useThreadShells,
   useThreadShellsForProjectRefs,
@@ -129,7 +127,6 @@ import {
 } from "../threadRoutes";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
-import { openThreadTitleUpdates } from "../threadTitleUpdatesPanel";
 import { Kbd } from "./ui/kbd";
 import {
   getArm64IntelBuildWarningDescription,
@@ -774,7 +771,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               <PullRequestGlyph.pullRequest className="size-3" />
             </a>
           ) : null}
-          {threadStatus ? <ThreadStatusLabel status={threadStatus} /> : null}
+          {threadStatus && <ThreadStatusLabel status={threadStatus} />}
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}
@@ -801,18 +798,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               <TooltipPopup side="top">{thread.title}</TooltipPopup>
             </Tooltip>
           )}
-          <ThreadRenameIndicator
-            thread={thread}
-            onClick={
-              readEnvironmentSupportsTitleUpdates(thread.environmentId)
-                ? (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    openThreadTitleUpdates(threadRef);
-                  }
-                : undefined
-            }
-          />
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {discoveredPorts.length > 0 && (
@@ -2270,9 +2255,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
-          ...(readEnvironmentSupportsTitleUpdates(thread.environmentId)
-            ? [{ id: "title-updates", label: "Title updates", icon: "sparkles" }]
-            : []),
           { id: "project-settings", label: "Project settings" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
         ],
@@ -2314,11 +2296,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       if (clicked === "rename") {
         startThreadRename(threadKey, thread.title);
-        return;
-      }
-
-      if (clicked === "title-updates") {
-        openThreadTitleUpdates(threadRef);
         return;
       }
 

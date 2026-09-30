@@ -117,7 +117,6 @@ export function applyThreadDetailEvent(
           id: event.payload.threadId,
           projectId: event.payload.projectId,
           title: event.payload.title,
-          titleAutoRenamedAt: null,
           modelSelection: event.payload.modelSelection,
           runtimeMode: event.payload.runtimeMode,
           interactionMode: event.payload.interactionMode,
@@ -270,9 +269,6 @@ export function applyThreadDetailEvent(
           ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
           ...(event.payload.titleState !== undefined
             ? { titleState: event.payload.titleState }
-            : {}),
-          ...(event.payload.titleAutoRenamedAt !== undefined
-            ? { titleAutoRenamedAt: event.payload.titleAutoRenamedAt }
             : {}),
           ...(event.payload.titleRegeneration !== undefined
             ? { titleRegeneration: event.payload.titleRegeneration }

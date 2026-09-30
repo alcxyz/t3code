@@ -34,23 +34,14 @@ export function withAgentDeviceEnvironment(
   };
 }
 
-// Null records a provider session started without the optional MCP endpoint.
-const sessionsByThread = new Map<ThreadId, McpProviderSessionConfig | null>();
+const sessionsByThread = new Map<ThreadId, McpProviderSessionConfig>();
 
 export function setMcpProviderSession(config: McpProviderSessionConfig): void {
   sessionsByThread.set(config.threadId, config);
 }
 
 export function readMcpProviderSession(threadId: ThreadId): McpProviderSessionConfig | undefined {
-  return sessionsByThread.get(threadId) ?? undefined;
-}
-
-export function markMcpProviderSessionUnavailable(threadId: ThreadId): void {
-  sessionsByThread.set(threadId, null);
-}
-
-export function requiresNewMcpProviderSession(threadId: ThreadId): boolean {
-  return sessionsByThread.get(threadId) === null;
+  return sessionsByThread.get(threadId);
 }
 
 export function clearMcpProviderSession(threadId: ThreadId): void {

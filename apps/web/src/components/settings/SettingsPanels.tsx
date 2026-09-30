@@ -10,7 +10,6 @@ import {
   type DesktopUpdateChannel,
   ProviderDriverKind,
   type ProviderInstanceId,
-  type ServerSettings,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
@@ -27,10 +26,6 @@ import {
   type DiffLayout,
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
-  MAX_AUTOMATIC_TITLE_RENAME_COUNT,
-  MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
-  MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
-  MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
   MAX_CODE_FONT_SIZE,
   MAX_GLASS_OPACITY,
   MAX_INTERFACE_FONT_SIZE,
@@ -40,10 +35,6 @@ import {
   MAX_TERMINAL_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
   MIN_APPEARANCE_CONTRAST,
-  MIN_AUTOMATIC_TITLE_RENAME_COUNT,
-  MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES,
-  MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS,
-  MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS,
   MIN_GLASS_OPACITY,
   MIN_INTERFACE_FONT_SIZE,
   MIN_PANEL_ANIMATION_DURATION_MS,
@@ -54,7 +45,6 @@ import {
   type QuitConfirmationMode,
 } from "@t3tools/contracts/settings";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
-import { resolveAutomaticThreadTitleRenameLimit } from "@t3tools/shared/serverSettings";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
@@ -217,15 +207,6 @@ const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
   split: "Split",
-};
-
-type AutomaticThreadTitleRenamePolicy = ServerSettings["automaticThreadTitleRenamePolicy"];
-
-const AUTOMATIC_TITLE_POLICY_LABELS: Record<AutomaticThreadTitleRenamePolicy, string> = {
-  rare: "Rare · first 360 min + 10 turns; then 120 min + 3 turns",
-  balanced: "Balanced · first 120 min + 5 turns; then 45 min + 2 turns",
-  often: "Often · first 30 min + 3 turns; then 15 min + 1 turn",
-  custom: "Custom",
 };
 
 const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
@@ -582,27 +563,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
-      ...(settings.automaticThreadTitles !== DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles
-        ? ["Keep thread titles up to date"]
-        : []),
-      ...(settings.automaticThreadTitleRenamePolicy !==
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy ||
-      settings.automaticThreadTitleRenameMaxCount !==
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMaxCount ||
-      settings.automaticThreadTitleRenameWindowHours !==
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameWindowHours ||
-      settings.automaticThreadTitleRenameMinAgeMinutes !==
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinAgeMinutes ||
-      settings.automaticThreadTitleRenameMinCompletedTurns !==
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinCompletedTurns ||
-      settings.automaticThreadTitleRenameCooldownMinutes !==
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameCooldownMinutes ||
-      settings.automaticThreadTitleRenameMinFreshTurns !==
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinFreshTurns ||
-      settings.automaticThreadTitleRenameRollingLimitEnabled !==
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameRollingLimitEnabled
-        ? ["Automatic title update frequency"]
-        : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
@@ -648,6 +608,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.continueThreadsAfterServerUpdate !==
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
         ? ["Continue threads after restarts"]
+        : []),
+      ...(settings.automaticThreadTitleUpdates !==
+      DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleUpdates
+        ? ["Keep thread titles current"]
         : []),
       ...(isBackgroundActivityDirty ? ["Background activity"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
@@ -721,17 +685,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.responseStreamingMode,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
+      settings.automaticThreadTitleUpdates,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
-      settings.automaticThreadTitles,
-      settings.automaticThreadTitleRenamePolicy,
-      settings.automaticThreadTitleRenameMaxCount,
-      settings.automaticThreadTitleRenameMinAgeMinutes,
-      settings.automaticThreadTitleRenameMinCompletedTurns,
-      settings.automaticThreadTitleRenameCooldownMinutes,
-      settings.automaticThreadTitleRenameMinFreshTurns,
-      settings.automaticThreadTitleRenameRollingLimitEnabled,
-      settings.automaticThreadTitleRenameWindowHours,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
@@ -830,27 +786,12 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
-      automaticThreadTitles: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles,
-      automaticThreadTitleRenamePolicy: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy,
-      automaticThreadTitleRenameMaxCount:
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMaxCount,
-      automaticThreadTitleRenameWindowHours:
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameWindowHours,
-      automaticThreadTitleRenameMinAgeMinutes:
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinAgeMinutes,
-      automaticThreadTitleRenameMinCompletedTurns:
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinCompletedTurns,
-      automaticThreadTitleRenameCooldownMinutes:
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameCooldownMinutes,
-      automaticThreadTitleRenameMinFreshTurns:
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinFreshTurns,
-      automaticThreadTitleRenameRollingLimitEnabled:
-        DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameRollingLimitEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+      automaticThreadTitleUpdates: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleUpdates,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -2241,12 +2182,12 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
     );
-  const supportsAutomaticThreadTitles =
+  const supportsAutomaticTitleUpdates =
     connectedEnvironments.length > 0 &&
     connectedEnvironments.every(
-      (target) => target.serverConfig?.environment.capabilities.automaticThreadTitles === true,
+      (target) =>
+        target.serverConfig?.environment.capabilities.automaticThreadTitleUpdates === true,
     );
-  const automaticTitleRenameLimit = resolveAutomaticThreadTitleRenameLimit(settings);
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,
@@ -3006,295 +2947,6 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="projects-and-threads" title="Projects & threads">
-        {supportsAutomaticThreadTitles ? (
-          <>
-            <SettingsRow
-              serverScoped
-              {...searchableSetting("automatic-thread-titles")}
-              description="Agents update titles when the objective meaningfully changes. Snoozed, archived, and settled threads are skipped, and manually chosen titles stay protected."
-              resetAction={
-                settings.automaticThreadTitles !==
-                DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles ? (
-                  <SettingResetButton
-                    label="automatic thread titles"
-                    onClick={() =>
-                      updateSettings({
-                        automaticThreadTitles: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitles,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <Switch
-                  checked={settings.automaticThreadTitles}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ automaticThreadTitles: Boolean(checked) })
-                  }
-                  aria-label="Keep thread titles up to date"
-                />
-              }
-            />
-
-            {settings.automaticThreadTitles ? (
-              <SettingsRow
-                serverScoped
-                {...searchableSetting("automatic-thread-title-frequency")}
-                description={`First update: ${automaticTitleRenameLimit.minAgeMinutes} minutes old and ${automaticTitleRenameLimit.minCompletedTurns} completed ${automaticTitleRenameLimit.minCompletedTurns === 1 ? "turn" : "turns"}. Later updates: ${automaticTitleRenameLimit.cooldownMinutes} minutes and ${automaticTitleRenameLimit.minFreshTurns} new completed ${automaticTitleRenameLimit.minFreshTurns === 1 ? "turn" : "turns"}.${automaticTitleRenameLimit.rollingLimit === null ? " No rolling limit." : ` Allows at most ${automaticTitleRenameLimit.rollingLimit.maxCount === 1 ? "one update" : `${automaticTitleRenameLimit.rollingLimit.maxCount} updates`} per rolling ${automaticTitleRenameLimit.rollingLimit.windowHours}-hour window.`}`}
-                resetAction={
-                  settings.automaticThreadTitleRenamePolicy !==
-                    DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy ||
-                  settings.automaticThreadTitleRenameMaxCount !==
-                    DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMaxCount ||
-                  settings.automaticThreadTitleRenameWindowHours !==
-                    DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameWindowHours ||
-                  settings.automaticThreadTitleRenameMinAgeMinutes !==
-                    DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinAgeMinutes ||
-                  settings.automaticThreadTitleRenameMinCompletedTurns !==
-                    DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinCompletedTurns ||
-                  settings.automaticThreadTitleRenameCooldownMinutes !==
-                    DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameCooldownMinutes ||
-                  settings.automaticThreadTitleRenameMinFreshTurns !==
-                    DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinFreshTurns ||
-                  settings.automaticThreadTitleRenameRollingLimitEnabled !==
-                    DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameRollingLimitEnabled ? (
-                    <SettingResetButton
-                      label="automatic title update frequency"
-                      onClick={() =>
-                        updateSettings({
-                          automaticThreadTitleRenamePolicy:
-                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenamePolicy,
-                          automaticThreadTitleRenameMaxCount:
-                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMaxCount,
-                          automaticThreadTitleRenameWindowHours:
-                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameWindowHours,
-                          automaticThreadTitleRenameMinAgeMinutes:
-                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinAgeMinutes,
-                          automaticThreadTitleRenameMinCompletedTurns:
-                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinCompletedTurns,
-                          automaticThreadTitleRenameCooldownMinutes:
-                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameCooldownMinutes,
-                          automaticThreadTitleRenameMinFreshTurns:
-                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameMinFreshTurns,
-                          automaticThreadTitleRenameRollingLimitEnabled:
-                            DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleRenameRollingLimitEnabled,
-                        })
-                      }
-                    />
-                  ) : null
-                }
-                control={
-                  <Select
-                    value={settings.automaticThreadTitleRenamePolicy}
-                    onValueChange={(value) => {
-                      if (
-                        value === "rare" ||
-                        value === "balanced" ||
-                        value === "often" ||
-                        value === "custom"
-                      ) {
-                        updateSettings({ automaticThreadTitleRenamePolicy: value });
-                      }
-                    }}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className="w-full sm:w-96"
-                      aria-label="Automatic title update frequency"
-                    >
-                      <SelectValue>
-                        {AUTOMATIC_TITLE_POLICY_LABELS[settings.automaticThreadTitleRenamePolicy]}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectPopup align="end" alignItemWithTrigger={false}>
-                      {(
-                        Object.entries(AUTOMATIC_TITLE_POLICY_LABELS) as Array<
-                          [AutomaticThreadTitleRenamePolicy, string]
-                        >
-                      ).map(([value, label]) => (
-                        <SelectItem key={value} hideIndicator value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
-                }
-              />
-            ) : null}
-
-            {settings.automaticThreadTitles &&
-            settings.automaticThreadTitleRenamePolicy === "custom" ? (
-              <>
-                <SettingsRow
-                  serverScoped
-                  title="First title eligibility"
-                  description="For the first automatic title update. Both the thread age and completed-turn thresholds must be met."
-                  control={
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <NumberField
-                        value={settings.automaticThreadTitleRenameMinAgeMinutes}
-                        min={MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES}
-                        max={MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES}
-                        step={1}
-                        size="sm"
-                        className="w-24"
-                        onValueChange={(value) => {
-                          if (typeof value === "number" && Number.isInteger(value)) {
-                            updateSettings({ automaticThreadTitleRenameMinAgeMinutes: value });
-                          }
-                        }}
-                      >
-                        <NumberFieldGroup>
-                          <NumberFieldDecrement aria-label="Decrease minimum thread age" />
-                          <NumberFieldInput aria-label="Minimum thread age in minutes" />
-                          <NumberFieldIncrement aria-label="Increase minimum thread age" />
-                        </NumberFieldGroup>
-                      </NumberField>
-                      <span className="text-xs text-muted-foreground">minutes old and</span>
-                      <NumberField
-                        value={settings.automaticThreadTitleRenameMinCompletedTurns}
-                        min={MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS}
-                        max={MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS}
-                        step={1}
-                        size="sm"
-                        className="w-24"
-                        onValueChange={(value) => {
-                          if (typeof value === "number" && Number.isInteger(value)) {
-                            updateSettings({ automaticThreadTitleRenameMinCompletedTurns: value });
-                          }
-                        }}
-                      >
-                        <NumberFieldGroup>
-                          <NumberFieldDecrement aria-label="Decrease minimum completed turns" />
-                          <NumberFieldInput aria-label="Minimum completed turns" />
-                          <NumberFieldIncrement aria-label="Increase minimum completed turns" />
-                        </NumberFieldGroup>
-                      </NumberField>
-                      <span className="text-xs text-muted-foreground">completed turns</span>
-                    </div>
-                  }
-                />
-                <SettingsRow
-                  serverScoped
-                  title="Recurring title eligibility"
-                  description="Both requirements apply after each automatic update. New turns must start after that update."
-                  control={
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <NumberField
-                        value={settings.automaticThreadTitleRenameCooldownMinutes}
-                        min={MIN_AUTOMATIC_TITLE_RENAME_AGE_MINUTES}
-                        max={MAX_AUTOMATIC_TITLE_RENAME_AGE_MINUTES}
-                        step={1}
-                        size="sm"
-                        className="w-24"
-                        onValueChange={(value) => {
-                          if (typeof value === "number" && Number.isInteger(value)) {
-                            updateSettings({ automaticThreadTitleRenameCooldownMinutes: value });
-                          }
-                        }}
-                      >
-                        <NumberFieldGroup>
-                          <NumberFieldDecrement aria-label="Decrease title update cooldown" />
-                          <NumberFieldInput aria-label="Title update cooldown in minutes" />
-                          <NumberFieldIncrement aria-label="Increase title update cooldown" />
-                        </NumberFieldGroup>
-                      </NumberField>
-                      <span className="text-xs text-muted-foreground">minutes and</span>
-                      <NumberField
-                        value={settings.automaticThreadTitleRenameMinFreshTurns}
-                        min={MIN_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS}
-                        max={MAX_AUTOMATIC_TITLE_RENAME_COMPLETED_TURNS}
-                        step={1}
-                        size="sm"
-                        className="w-24"
-                        onValueChange={(value) => {
-                          if (typeof value === "number" && Number.isInteger(value)) {
-                            updateSettings({ automaticThreadTitleRenameMinFreshTurns: value });
-                          }
-                        }}
-                      >
-                        <NumberFieldGroup>
-                          <NumberFieldDecrement aria-label="Decrease fresh completed turns" />
-                          <NumberFieldInput aria-label="Fresh completed turns" />
-                          <NumberFieldIncrement aria-label="Increase fresh completed turns" />
-                        </NumberFieldGroup>
-                      </NumberField>
-                      <span className="text-xs text-muted-foreground">new completed turns</span>
-                    </div>
-                  }
-                />
-                <SettingsRow
-                  serverScoped
-                  title="Rolling title update limit"
-                  description="Optionally cap automatic title updates within a rolling time window."
-                  control={
-                    <Switch
-                      checked={settings.automaticThreadTitleRenameRollingLimitEnabled}
-                      onCheckedChange={(checked) =>
-                        updateSettings({
-                          automaticThreadTitleRenameRollingLimitEnabled: Boolean(checked),
-                        })
-                      }
-                      aria-label="Limit automatic title updates in a rolling window"
-                    />
-                  }
-                />
-                {settings.automaticThreadTitleRenameRollingLimitEnabled ? (
-                  <SettingsRow
-                    serverScoped
-                    title="Rolling limit"
-                    description="Both the maximum update count and rolling-window length apply."
-                    control={
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <NumberField
-                          value={settings.automaticThreadTitleRenameMaxCount}
-                          min={MIN_AUTOMATIC_TITLE_RENAME_COUNT}
-                          max={MAX_AUTOMATIC_TITLE_RENAME_COUNT}
-                          step={1}
-                          size="sm"
-                          className="w-24"
-                          onValueChange={(value) => {
-                            if (typeof value === "number" && Number.isInteger(value)) {
-                              updateSettings({ automaticThreadTitleRenameMaxCount: value });
-                            }
-                          }}
-                        >
-                          <NumberFieldGroup>
-                            <NumberFieldDecrement aria-label="Decrease automatic title update count" />
-                            <NumberFieldInput aria-label="Automatic title update count" />
-                            <NumberFieldIncrement aria-label="Increase automatic title update count" />
-                          </NumberFieldGroup>
-                        </NumberField>
-                        <span className="text-xs text-muted-foreground">updates per</span>
-                        <NumberField
-                          value={settings.automaticThreadTitleRenameWindowHours}
-                          min={MIN_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS}
-                          max={MAX_AUTOMATIC_TITLE_RENAME_WINDOW_HOURS}
-                          step={1}
-                          size="sm"
-                          className="w-24"
-                          onValueChange={(value) => {
-                            if (typeof value === "number" && Number.isInteger(value)) {
-                              updateSettings({ automaticThreadTitleRenameWindowHours: value });
-                            }
-                          }}
-                        >
-                          <NumberFieldGroup>
-                            <NumberFieldDecrement aria-label="Decrease automatic title window" />
-                            <NumberFieldInput aria-label="Automatic title window in hours" />
-                            <NumberFieldIncrement aria-label="Increase automatic title window" />
-                          </NumberFieldGroup>
-                        </NumberField>
-                        <span className="text-xs text-muted-foreground">hours</span>
-                      </div>
-                    }
-                  />
-                ) : null}
-              </>
-            ) : null}
-          </>
-        ) : null}
-
         <SettingsRow
           serverScoped
           settingKeys={["newWorktreesStartFromOrigin"]}
@@ -3585,6 +3237,44 @@ export function GeneralSettingsPanel() {
                 ) : null}
               </div>
             )
+          }
+        />
+
+        <SettingsRow
+          serverScoped
+          settingKeys={["automaticThreadTitleUpdates"]}
+          {...searchableSetting("automatic-thread-title-updates")}
+          description="Every few turns, update a generated thread title if the conversation has moved on. Titles you rename yourself stay as they are."
+          status={
+            hasServerTargets && !supportsAutomaticTitleUpdates
+              ? "All selected connected environments must support automatic title updates."
+              : undefined
+          }
+          resetAction={
+            supportsAutomaticTitleUpdates &&
+            settings.automaticThreadTitleUpdates !==
+              DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleUpdates ? (
+              <SettingResetButton
+                label="keep thread titles current"
+                onClick={() =>
+                  updateSettings({
+                    automaticThreadTitleUpdates:
+                      DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleUpdates,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["automaticThreadTitleUpdates"]}
+              checked={settings.automaticThreadTitleUpdates}
+              disabled={!supportsAutomaticTitleUpdates}
+              onCheckedChange={(checked) =>
+                updateSettings({ automaticThreadTitleUpdates: Boolean(checked) })
+              }
+              aria-label="Keep thread titles current"
+            />
           }
         />
       </SettingsSection>

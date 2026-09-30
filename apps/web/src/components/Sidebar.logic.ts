@@ -557,8 +557,6 @@ type ThreadStatusInput = Pick<
   | "session"
   | "backgroundLiveness"
 > & {
-  latestUserMessageAt?: string | null | undefined;
-  titleAutoRenamedAt?: string | null | undefined;
   lastVisitedAt?: string | undefined;
 };
 
@@ -972,19 +970,6 @@ export function formatWorkingDurationLabel(elapsedMs: number): string {
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
-/** An automatic rename stays visible until the next user message begins. */
-export function hasActiveAutomaticRename(input: {
-  readonly titleAutoRenamedAt?: string | null | undefined;
-  readonly latestUserMessageAt?: string | null | undefined;
-}): boolean {
-  if (input.titleAutoRenamedAt == null) return false;
-  const renamedAt = Date.parse(input.titleAutoRenamedAt);
-  if (!Number.isFinite(renamedAt)) return false;
-  if (input.latestUserMessageAt == null) return true;
-  const latestUserMessageAt = Date.parse(input.latestUserMessageAt);
-  return Number.isFinite(latestUserMessageAt) && renamedAt > latestUserMessageAt;
 }
 
 export function resolveThreadStatusPill(input: {

@@ -60,6 +60,7 @@ import {
   PinIcon,
   PinOffIcon,
   PlusIcon,
+  RefreshCwIcon,
   SettingsIcon,
   ShieldQuestionIcon,
   SquarePenIcon,
@@ -133,7 +134,6 @@ import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
   readThreadShell,
-  readEnvironmentSupportsTitleUpdates,
   useAllEnvironmentProjectSnapshotsReady,
   useProjects,
   useThreadShells,
@@ -153,7 +153,6 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat"
 import type { SidebarThreadSummary } from "../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
-import { openThreadTitleUpdates } from "../threadTitleUpdatesPanel";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
@@ -207,7 +206,6 @@ import {
   ThreadPullRequestBadgeControl,
   ThreadPullRequestsMiniList,
   ThreadWorktreeIndicator,
-  ThreadRenameIndicator,
   prStatusIndicator,
   resolveThreadPullRequestBadge,
   terminalStatusFromRunningIds,
@@ -985,7 +983,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Pinned threads show the same pin marker in active, settled, and snoozed
   // rows. The marker can unpin the thread when the server supports pinning.
   pinningSupported: boolean;
-  titleUpdatesSupported: boolean;
   isPinned: boolean;
   // Present on rows whose server supports every drop outcome: dnd-kit
   // sortable bag applied to the row root so the whole row drags (the
@@ -1362,14 +1359,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     },
     [onSnooze, threadRef],
   );
-  const handleTitleUpdatesClick = useCallback(
-    (event: ReactMouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      openThreadTitleUpdates(threadRef);
-    },
-    [threadRef],
-  );
   // While the snooze popover is open the pointer leaves the row, which
   // would fade the hover actions out from under the open menu. Pin them and
   // suppress the row tooltip so its portal cannot overlap the popover.
@@ -1525,6 +1514,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     </span>
   );
   const accessibleTitle = isRenaming ? null : <span className="sr-only">{thread.title}</span>;
+  // Static on purpose: a spinning icon repaints every frame for the whole
+  // regeneration, and the dimmed title already reads as "in flight".
+  const titleRegenerationIndicator = isRegeneratingTitle ? (
+    <span className="inline-flex shrink-0 items-center text-muted-foreground">
+      <RefreshCwIcon aria-hidden className="size-3.5" />
+      <span role="status" className="sr-only">
+        Regenerating title
+      </span>
+    </span>
+  ) : null;
 
   // Stacks show their layer count; multiple unrelated links show their total count.
   // Plain clicks open T3; individual PR links also support opening the host in a new tab.
@@ -1629,7 +1628,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 aria-label={accessibility.label}
                 aria-current={accessibility.current}
                 data-testid="sidebar-row-slim"
-                aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
@@ -1652,17 +1650,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             </span>
             {draftIndicator}
             {title}
-            <ThreadRenameIndicator
-              thread={thread}
-              onClick={props.titleUpdatesSupported ? handleTitleUpdatesClick : undefined}
-            />
             {pinIndicator}
+            {titleRegenerationIndicator}
             {terminalStatusIcon}
-            {isRegeneratingTitle ? (
-              <span role="status" className="sr-only">
-                Regenerating title
-              </span>
-            ) : null}
             {/* The PR badge stays outside the hover-fading slot: it must
               remain visible AND clickable while the row is hovered. Only
               the time/jump label yields to the settle affordance. */}
@@ -1789,7 +1779,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               aria-label={accessibility.label}
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"
-              aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
               onDoubleClick={handleDoubleClick}
@@ -1954,17 +1943,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-            <div className="mt-1 flex min-w-0 items-center gap-1">
+            <div className="mt-1 flex min-w-0 items-center gap-1.5">
               {title}
-              <ThreadRenameIndicator
-                thread={thread}
-                onClick={props.titleUpdatesSupported ? handleTitleUpdatesClick : undefined}
-              />
-              {isRegeneratingTitle ? (
-                <span role="status" className="sr-only">
-                  Regenerating title
-                </span>
-              ) : null}
+              {titleRegenerationIndicator}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
               {/* Always the branch. The plan step used to take this slot while
@@ -4087,7 +4068,6 @@ export default function Sidebar() {
         const supportsTitleRegeneration =
           serverConfigs.get(thread.environmentId)?.environment.capabilities
             .threadTitleRegeneration === true;
-        const supportsTitleUpdates = readEnvironmentSupportsTitleUpdates(thread.environmentId);
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
@@ -4126,7 +4106,6 @@ export default function Sidebar() {
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
-                titleUpdates: supportsTitleUpdates,
               },
               snoozePresets,
             }),
@@ -4215,9 +4194,6 @@ export default function Sidebar() {
           }
           case "rename":
             startThreadRename(threadRef, thread.title);
-            return;
-          case "title-updates":
-            openThreadTitleUpdates(threadRef);
             return;
           case "regenerate-title": {
             if (isRegeneratingTitle) return;
@@ -4770,9 +4746,6 @@ export default function Sidebar() {
                               serverConfigs.get(thread.environmentId)?.environment.capabilities
                                 .threadPinning === true
                             }
-                            titleUpdatesSupported={readEnvironmentSupportsTitleUpdates(
-                              thread.environmentId,
-                            )}
                             isPinned={thread.pinnedAt != null}
                             sortable={sortable}
                             dropVerb={

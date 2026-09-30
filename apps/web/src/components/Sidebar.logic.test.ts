@@ -29,7 +29,6 @@ import {
   resolveWorkingStartedAt,
   searchSidebarThreads,
   formatWorkingDurationLabel,
-  hasActiveAutomaticRename,
   shouldClearThreadSelectionOnMouseDown,
   shouldRecedeSidebarThread,
   sortLogicalProjectsForSidebar,
@@ -1925,7 +1924,6 @@ describe("resolveThreadStatusPill", () => {
     hasPendingUserInput: false,
     interactionMode: "plan" as const,
     latestTurn: null,
-    latestUserMessageAt: "2026-03-09T09:00:00.000Z",
     lastVisitedAt: undefined,
     session: {
       threadId: ThreadId.make("thread-1"),
@@ -2003,29 +2001,6 @@ describe("resolveThreadStatusPill", () => {
     ).toBeNull();
   });
 
-  it("keeps working and completed status independent of automatic rename notices", () => {
-    const renamed = { titleAutoRenamedAt: "2026-03-09T10:05:30.000Z" };
-    const workingThread = { ...baseThread, ...renamed };
-    expect(resolveThreadStatusPill({ thread: workingThread })).toEqual(
-      resolveThreadStatusPill({ thread: baseThread }),
-    );
-    const completedThread = {
-      ...baseThread,
-      interactionMode: "default" as const,
-      latestTurn: makeLatestTurn(),
-      lastVisitedAt: "2026-03-09T10:04:00.000Z",
-      session: { ...baseThread.session, status: "ready" as const, activeTurnId: null },
-      ...renamed,
-    };
-    expect(hasActiveAutomaticRename(completedThread)).toBe(true);
-    expect(resolveThreadStatusPill({ thread: completedThread })).toMatchObject({
-      label: "Completed",
-    });
-    expect(
-      resolveThreadStatusPill({ thread: { ...baseThread, ...renamed, session: null } }),
-    ).toBeNull();
-  });
-
   it("shows completed when there is an unseen completion and no active blocker", () => {
     expect(
       resolveThreadStatusPill({
@@ -2042,29 +2017,6 @@ describe("resolveThreadStatusPill", () => {
         },
       }),
     ).toMatchObject({ label: "Completed", pulse: false });
-  });
-});
-
-describe("hasActiveAutomaticRename", () => {
-  it("requires a valid rename timestamp newer than the latest user message", () => {
-    expect(
-      hasActiveAutomaticRename({
-        titleAutoRenamedAt: "2026-03-09T09:01:00.000Z",
-        latestUserMessageAt: "2026-03-09T09:00:00.000Z",
-      }),
-    ).toBe(true);
-    expect(
-      hasActiveAutomaticRename({
-        titleAutoRenamedAt: "2026-03-09T09:01:00.000Z",
-        latestUserMessageAt: "2026-03-09T09:01:00.000Z",
-      }),
-    ).toBe(false);
-    expect(
-      hasActiveAutomaticRename({
-        titleAutoRenamedAt: null,
-        latestUserMessageAt: "2026-03-09T09:00:00.000Z",
-      }),
-    ).toBe(false);
   });
 });
 

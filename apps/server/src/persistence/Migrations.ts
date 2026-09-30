@@ -10,7 +10,6 @@
 
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -62,7 +61,6 @@ import Migration0046 from "./Migrations/046_RepairAutomaticSettlementTimestamps.
 import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
 import Migration0048 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
 import Migration0049 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
-import ForkProjectionThreadTitleSource from "./Migrations/ForkProjectionThreadTitleSource.ts";
 import Migration0050 from "./Migrations/050_ProjectionThreadPullRequests.ts";
 import Migration0051 from "./Migrations/051_ProjectionThreadMessageContext.ts";
 import Migration0052 from "./Migrations/052_ProjectionThreadTitleState.ts";
@@ -138,80 +136,6 @@ const migrationEntries = [
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
-const releasePrerequisiteTitleStateMigrationId = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  yield* sql.withTransaction(
-    Effect.gen(function* () {
-      const migrationTables = yield* sql<{ readonly name: string }>`
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'table' AND name = 'effect_sql_migrations'
-      `;
-      if (migrationTables.length === 0) {
-        return;
-      }
-
-      const recordedMigrations = yield* sql<{
-        readonly id: number;
-        readonly name: string;
-      }>`
-        SELECT migration_id AS id, name
-        FROM effect_sql_migrations
-        ORDER BY migration_id
-      `;
-      const prerequisiteBase = migrationManifest.filter(([id]) => id < 50);
-      const hasExactPrerequisiteBase = prerequisiteBase.every(
-        ([id, name], index) =>
-          recordedMigrations[index]?.id === id && recordedMigrations[index]?.name === name,
-      );
-      const prerequisiteMigration = recordedMigrations[prerequisiteBase.length];
-      const hasLegacyTitleMigration =
-        prerequisiteMigration?.id === 50 &&
-        prerequisiteMigration.name === "ProjectionThreadTitleState";
-      const suffix = recordedMigrations.slice(prerequisiteBase.length + 1);
-      const hasExactPrerequisiteHistory =
-        recordedMigrations.length === prerequisiteBase.length + 1 &&
-        hasExactPrerequisiteBase &&
-        hasLegacyTitleMigration;
-      const hasIntermediateUpstreamHistory =
-        hasExactPrerequisiteBase &&
-        hasLegacyTitleMigration &&
-        suffix.length === 1 &&
-        suffix[0]?.id === 51 &&
-        suffix[0].name === "ProjectionThreadMessageContext";
-      if (!hasExactPrerequisiteHistory && !hasIntermediateUpstreamHistory) {
-        return;
-      }
-
-      const columns = yield* sql<{ readonly name: string }>`
-        PRAGMA table_info(projection_threads)
-      `;
-      if (!columns.some((column) => column.name === "title_state_json")) {
-        return;
-      }
-
-      if (hasIntermediateUpstreamHistory) {
-        // An upstream 51 build skipped its migration 50 because the legacy title
-        // migration already held that id. Apply 50 directly before repairing its
-        // ledger name; the recorded 51 high-water mark can then remain intact.
-        yield* Migration0050;
-        yield* sql`
-          UPDATE effect_sql_migrations
-          SET name = 'ProjectionThreadPullRequests'
-          WHERE migration_id = 50 AND name = 'ProjectionThreadTitleState'
-        `;
-      } else {
-        // Prerequisite builds briefly claimed upstream migration 50 for this exact
-        // column. Release only that fully matched history so upstream can reuse 50.
-        yield* sql`
-          DELETE FROM effect_sql_migrations
-          WHERE migration_id = 50 AND name = 'ProjectionThreadTitleState'
-        `;
-      }
-    }),
-  );
-});
-
 const makeMigrationLoader = (throughId?: number) =>
   Migrator.fromRecord(
     Object.fromEntries(
@@ -244,14 +168,7 @@ export interface RunMigrationsOptions {
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
-  if (toMigrationInclusive === undefined) {
-    yield* releasePrerequisiteTitleStateMigrationId;
-  }
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
-  // Fork-only badge and ownership compatibility stay outside upstream's ledger.
-  if (toMigrationInclusive === undefined) {
-    yield* ForkProjectionThreadTitleSource;
-  }
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0
     ? Effect.logDebug("Database schema is current")
