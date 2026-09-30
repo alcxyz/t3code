@@ -43,8 +43,6 @@ import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
-import { ThreadTitleUpdatesQueryLive } from "./persistence/Layers/ThreadTitleUpdatesQuery.ts";
-import { AutomaticThreadTitleRenameQueryLive } from "./persistence/Layers/AutomaticThreadTitleRenameQuery.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -92,7 +90,6 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
-import { AutomaticThreadTitleRateLimitLive } from "./orchestration/AutomaticThreadTitleRateLimit.ts";
 import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
@@ -294,13 +291,7 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
 
-const PersistenceLayerLive = Layer.mergeAll(
-  AutomaticThreadTitleRateLimitLive,
-  ThreadTitleUpdatesQueryLive,
-).pipe(
-  Layer.provide(AutomaticThreadTitleRenameQueryLive),
-  Layer.provideMerge(SqlitePersistenceLayerLive),
-);
+const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
@@ -371,10 +362,7 @@ const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(
-    TextGeneration.layer.pipe(
-      Layer.provide(SourceControlProviderRegistryLayerLive),
-      Layer.provide(ProcessRunner.layer),
-    ),
+    TextGeneration.layer.pipe(Layer.provide(SourceControlProviderRegistryLayerLive)),
   ),
 );
 

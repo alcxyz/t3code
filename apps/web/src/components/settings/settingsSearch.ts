@@ -65,7 +65,6 @@ export interface SettingsSearchItem {
    */
   readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
-  readonly requiresAutomaticThreadTitles?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -77,7 +76,6 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
-  readonly hasAutomaticThreadTitles: boolean;
 }
 
 /**
@@ -276,65 +274,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["combine matching repositories environments sidebar"],
   },
   {
-    id: "automatic-thread-titles",
-    title: "Keep thread titles up to date",
-    to: "/settings/general",
-    searchTerms: ["agent automatic regenerate rename objective projects threads"],
-    requiresAutomaticThreadTitles: true,
-  },
-  {
-    id: "automatic-thread-title-frequency",
-    title: "Automatic title update policy",
-    to: "/settings/general",
-    targetId: "automatic-thread-titles",
-    searchTerms: [
-      "rename rate rare balanced often custom first recurring cooldown fresh turns eligibility projects threads",
-    ],
-    requiresAutomaticThreadTitles: true,
-  },
-  {
-    id: "automatic-thread-title-minimum-age",
-    title: "Minimum age for automatic title updates",
-    to: "/settings/general",
-    targetId: "automatic-thread-titles",
-    searchTerms: ["rename eligibility minutes old thread custom threshold"],
-    requiresAutomaticThreadTitles: true,
-  },
-  {
-    id: "automatic-thread-title-minimum-turns",
-    title: "Minimum completed turns for automatic title updates",
-    to: "/settings/general",
-    targetId: "automatic-thread-titles",
-    searchTerms: [
-      "rename eligibility agent response work cycle tool calls progress custom threshold",
-    ],
-    requiresAutomaticThreadTitles: true,
-  },
-  {
-    id: "automatic-thread-title-cooldown",
-    title: "Cooldown between automatic title updates",
-    to: "/settings/general",
-    targetId: "automatic-thread-titles",
-    searchTerms: ["rename recurring after last feature title minutes custom threshold"],
-    requiresAutomaticThreadTitles: true,
-  },
-  {
-    id: "automatic-thread-title-fresh-turns",
-    title: "Fresh turns between automatic title updates",
-    to: "/settings/general",
-    targetId: "automatic-thread-titles",
-    searchTerms: ["rename recurring completed turns after title custom threshold"],
-    requiresAutomaticThreadTitles: true,
-  },
-  {
-    id: "automatic-thread-title-rolling-limit",
-    title: "Rolling automatic title update limit",
-    to: "/settings/general",
-    targetId: "automatic-thread-titles",
-    searchTerms: ["rename cap maximum count window hours custom optional"],
-    requiresAutomaticThreadTitles: true,
-  },
-  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/general",
@@ -522,6 +461,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["generated thread titles source control content default provider"],
+  },
+  {
+    id: "automatic-thread-title-updates",
+    title: "Keep thread titles current",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["automatic rename regenerate generated thread titles update conversation"],
   },
   {
     id: "diagnostics",
@@ -927,28 +873,23 @@ export function getSettingsSearchTargetScope(targetId: string) {
         title: item.title,
         scope: item.scope ?? SETTINGS_CATEGORY_SCOPES[item.to],
         ...(item.requiresThreadAutoSettlement ? { requiresThreadAutoSettlement: true } : {}),
-        ...(item.requiresAutomaticThreadTitles ? { requiresAutomaticThreadTitles: true } : {}),
       }
     : null;
 }
 
-interface CapabilitySearchEnvironment {
+interface AutoSettlementSearchEnvironment {
   readonly environmentId: EnvironmentId;
   readonly connection: { readonly phase: EnvironmentConnectionPhase };
   readonly serverConfig: {
     readonly environment: {
-      readonly capabilities: {
-        readonly threadAutoSettlement?: boolean;
-        readonly automaticThreadTitles?: boolean;
-      };
+      readonly capabilities: { readonly threadAutoSettlement?: boolean };
     };
   } | null;
 }
 
 /** Discovery needs one capable environment; the selected page needs every connected target to support it. */
-function getCapabilitySearchAvailability(
-  environments: readonly CapabilitySearchEnvironment[],
-  capability: "threadAutoSettlement" | "automaticThreadTitles",
+export function getThreadAutoSettlementSearchAvailability(
+  environments: readonly AutoSettlementSearchEnvironment[],
   scope?: Pick<ResolvedSettingsScope, "kind" | "environmentIds">,
 ) {
   const connected = environments.filter(
@@ -957,7 +898,8 @@ function getCapabilitySearchAvailability(
   );
   const eligibleEnvironmentIds = connected
     .filter(
-      (environment) => environment.serverConfig?.environment.capabilities[capability] === true,
+      (environment) =>
+        environment.serverConfig?.environment.capabilities.threadAutoSettlement === true,
     )
     .map((environment) => environment.environmentId);
   const selected = connected.filter((environment) =>
@@ -971,20 +913,6 @@ function getCapabilitySearchAvailability(
       selected.length > 0 &&
       selected.every((environment) => eligibleEnvironmentIds.includes(environment.environmentId)),
   };
-}
-
-export function getThreadAutoSettlementSearchAvailability(
-  environments: readonly CapabilitySearchEnvironment[],
-  scope?: Pick<ResolvedSettingsScope, "kind" | "environmentIds">,
-) {
-  return getCapabilitySearchAvailability(environments, "threadAutoSettlement", scope);
-}
-
-export function getAutomaticThreadTitlesSearchAvailability(
-  environments: readonly CapabilitySearchEnvironment[],
-  scope?: Pick<ResolvedSettingsScope, "kind" | "environmentIds">,
-) {
-  return getCapabilitySearchAvailability(environments, "automaticThreadTitles", scope);
 }
 
 export function isSettingsSearchScopeAvailable(
@@ -1050,8 +978,7 @@ export function filterAvailableSettingsSearchItems(
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
-      (!item.requiresAutomaticThreadTitles || availability.hasAutomaticThreadTitles),
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
   );
 }
 

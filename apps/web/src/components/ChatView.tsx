@@ -8289,6 +8289,20 @@ export default function ChatView(props: ChatViewProps) {
     );
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
+    // Auto-title from first message
+    if (isFirstMessage && isServerThread) {
+      const titleResult = await updateThreadMetadata({
+        environmentId,
+        input: {
+          threadId: threadIdForSend,
+          title,
+        },
+      });
+      if (titleResult._tag === "Failure") {
+        failure = titleResult;
+      }
+    }
+
     if (failure === null && isServerThread) {
       const settingsResult = await persistThreadSettingsForNextTurn({
         threadId: threadIdForSend,
@@ -9741,6 +9755,7 @@ export default function ChatView(props: ChatViewProps) {
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
             isServerThread={isServerThread}
+            isRegeneratingTitle={activeServerThread?.titleRegeneration != null}
             activeProject={activeProject}
             openInCwd={gitCwd}
             activeProjectScripts={activeProjectScripts}

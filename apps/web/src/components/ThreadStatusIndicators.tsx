@@ -14,7 +14,7 @@ import {
   visibleThreadPullRequests,
   type ThreadPullRequestBadge,
 } from "@t3tools/shared/threadPullRequests";
-import { FolderGit2Icon, SparklesIcon, TerminalIcon } from "lucide-react";
+import { FolderGit2Icon, TerminalIcon } from "lucide-react";
 import { useRender } from "@base-ui/react/use-render";
 import { useMemo, type AnimationEvent, type MouseEvent, type ReactElement } from "react";
 import { cn } from "../lib/utils";
@@ -26,11 +26,7 @@ import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../sta
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveChangeRequestPresentation } from "../sourceControlPresentation";
-import {
-  hasActiveAutomaticRename,
-  resolveThreadStatusPill,
-  type ThreadStatusPill,
-} from "./Sidebar.logic";
+import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic";
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -496,49 +492,6 @@ export function ThreadStatusLabel({
   );
 }
 
-export function ThreadRenameIndicator({
-  thread,
-  onClick,
-}: {
-  thread: Pick<SidebarThreadSummary, "titleAutoRenamedAt" | "latestUserMessageAt">;
-  onClick?: ((event: MouseEvent<HTMLButtonElement>) => void) | undefined;
-}) {
-  if (!hasActiveAutomaticRename(thread)) return null;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          onClick ? (
-            <button
-              type="button"
-              aria-label="Title renamed automatically. View title updates"
-              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              onPointerDown={(event) => event.stopPropagation()}
-              onDoubleClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
-              }}
-              onClick={onClick}
-            />
-          ) : (
-            <span
-              aria-label="Title renamed automatically"
-              className="inline-flex size-5 shrink-0 items-center justify-center text-muted-foreground"
-            />
-          )
-        }
-      >
-        <SparklesIcon aria-hidden className="size-3" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        {onClick
-          ? "Title renamed automatically · View title updates"
-          : "Title renamed automatically"}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
 /**
  * Non-interactive leading status icons for a thread row in compact contexts
  * like the command palette. Shows the change request state icon (if present) and the
@@ -570,7 +523,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
     pr === null && supportsMultiplePullRequests
       ? resolveThreadCurrentPullRequestLink(thread.pullRequests)
       : null;
-  if (!prStatus && !threadStatus && !pendingLink && !hasActiveAutomaticRename(thread)) {
+  if (!prStatus && !threadStatus && !pendingLink) {
     return null;
   }
 
@@ -600,7 +553,6 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
         />
       ) : null}
       {threadStatus ? <ThreadStatusLabel status={threadStatus} /> : null}
-      <ThreadRenameIndicator thread={thread} />
     </span>
   );
 }

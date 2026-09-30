@@ -64,19 +64,6 @@ export interface ProviderThreadSnapshot {
   readonly turns: ReadonlyArray<ProviderThreadTurnSnapshot>;
 }
 
-export interface ProviderRuntimeInstructionsContext {
-  readonly browserToolsAvailable: boolean | { readonly browser: boolean; readonly device: boolean };
-  readonly currentThreadTitle?: string;
-}
-
-export type ProviderAdapterSessionStartInput = ProviderSessionStartInput & {
-  readonly runtimeInstructions?: ProviderRuntimeInstructionsContext;
-};
-
-export type ProviderAdapterSendTurnInput = ProviderSendTurnInput & {
-  readonly runtimeInstructions?: ProviderRuntimeInstructionsContext;
-};
-
 export interface ProviderAdapterShape<TError> {
   /**
    * Provider kind implemented by this adapter.
@@ -88,14 +75,14 @@ export interface ProviderAdapterShape<TError> {
    * Start a provider-backed session.
    */
   readonly startSession: (
-    input: ProviderAdapterSessionStartInput,
+    input: ProviderSessionStartInput,
   ) => Effect.Effect<ProviderSession, TError>;
 
   /**
    * Send a turn to an active provider session.
    */
   readonly sendTurn: (
-    input: ProviderAdapterSendTurnInput,
+    input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, TError>;
 
   /** Omitted when this adapter does not support manual context compaction. */

@@ -177,6 +177,7 @@ describe("ProviderCommandReactor", () => {
     readonly unreadableHistory?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
+    readonly automaticThreadTitleUpdates?: boolean;
     readonly serverActivation?: Effect.Effect<void>;
     readonly beforeReadySessionDispatch?: () => Effect.Effect<void>;
     readonly beforeTurnStartDispatch?: () => Effect.Effect<void>;
@@ -493,7 +494,11 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
       Layer.provideMerge(Layer.mock(TerminalManager)({ closeIdle: closeIdleTerminals })),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        ServerSettingsService.layerTest({
+          automaticThreadTitleUpdates: input?.automaticThreadTitleUpdates ?? false,
+        }),
+      ),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
@@ -1771,6 +1776,80 @@ describe("ProviderCommandReactor", () => {
         expect(thread?.title).toBe("Fix QR pairing expiry");
         expect(thread?.titleState?.needsRefinement).toBe(false);
       }),
+  );
+
+  effectIt.effect.each([
+    { name: "every fifth completed turn when enabled", enabled: true, manual: false, calls: 2 },
+    { name: "never when disabled", enabled: false, manual: false, calls: 0 },
+    { name: "never for a manual title", enabled: true, manual: true, calls: 0 },
+  ])("updates a generated title $name", ({ enabled, manual, calls }) =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() =>
+        createHarness({ automaticThreadTitleUpdates: enabled }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      const createdAt = "2026-01-01T00:00:01.000Z";
+      harness.generateThreadTitle.mockReturnValue(Effect.succeed({ title: "Ship QR pairing" }));
+      yield* harness.engine.dispatch(
+        manual
+          ? {
+              type: "thread.meta.update",
+              commandId: CommandId.make("manual-title"),
+              threadId,
+              title: "My own title",
+            }
+          : {
+              type: "thread.title.generate.complete",
+              commandId: CommandId.make("initial-title"),
+              threadId,
+              expectedTitle: "Thread",
+              expectedVersion: null,
+              title: "Fix QR pairing expiry",
+              needsRefinement: false,
+            },
+      );
+      const setSession = (commandId: string, turnId: TurnId | null) =>
+        harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make(commandId),
+          threadId,
+          createdAt,
+          session: {
+            threadId,
+            status: turnId ? "running" : "ready",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: turnId,
+            lastError: null,
+            updatedAt: createdAt,
+          },
+        });
+      for (let index = 1; index <= 10; index++) {
+        const turnId = TurnId.make(`update-turn-${index}`);
+        yield* setSession(`update-running-${index}`, turnId);
+        yield* harness.engine.dispatch({
+          type: "thread.message.assistant.delta",
+          commandId: CommandId.make(`update-answer-${index}`),
+          threadId,
+          messageId: MessageId.make(`update-assistant-${index}`),
+          turnId,
+          delta: `Finished step ${index} of the QR pairing work.`,
+          createdAt,
+        });
+        yield* setSession(`update-ready-${index}`, null);
+        // A repeated ready signal for the same turn must not count twice.
+        yield* setSession(`update-ready-again-${index}`, null);
+        yield* Effect.promise(() => harness.drain());
+      }
+      const updates = harness.generateThreadTitle.mock.calls.filter(
+        ([input]) => input.previousTitle !== undefined,
+      );
+      expect(updates).toHaveLength(calls);
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads[0];
+      expect(thread?.title).toBe(
+        manual ? "My own title" : calls > 0 ? "Ship QR pairing" : "Fix QR pairing expiry",
+      );
+    }),
   );
 
   effectIt.effect("does not replace a manual title matching the first message seed", () =>
