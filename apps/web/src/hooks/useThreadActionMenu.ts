@@ -25,7 +25,6 @@ import {
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
   readEnvironmentSupportsTitleRegeneration,
-  readEnvironmentSupportsTitleUpdates,
   readThreadShell,
   useProjects,
 } from "../state/entities";
@@ -42,7 +41,6 @@ import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { useThreadActions } from "./useThreadActions";
-import { openThreadTitleUpdates } from "../threadTitleUpdatesPanel";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -140,7 +138,6 @@ export function useThreadActionMenu(input: {
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
           titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
-          titleUpdates: readEnvironmentSupportsTitleUpdates(threadRef.environmentId),
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -240,9 +237,6 @@ export function useThreadActionMenu(input: {
             return;
           case "rename":
             onStartRename();
-            return;
-          case "title-updates":
-            openThreadTitleUpdates(threadRef);
             return;
           case "regenerate-title":
             if (isRegeneratingTitle) return;

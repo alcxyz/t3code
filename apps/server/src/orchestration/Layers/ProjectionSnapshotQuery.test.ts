@@ -453,7 +453,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           id: ThreadId.make("thread-1"),
           projectId: asProjectId("project-1"),
           title: "Thread 1",
-          titleAutoRenamedAt: null,
           modelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
@@ -581,7 +580,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           id: ThreadId.make("thread-1"),
           projectId: asProjectId("project-1"),
           title: "Thread 1",
-          titleAutoRenamedAt: null,
           modelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
@@ -754,11 +752,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       }
 
       yield* sql`
-        UPDATE projection_threads
-        SET title_state_json = '{"source":"generated","version":"context-version","needsRefinement":false}'
-        WHERE thread_id = 'thread-1'
-      `;
-      yield* sql`
         UPDATE projection_thread_sessions
         SET status = 'starting', active_turn_id = NULL, provider_name = 'claudeAgent',
             provider_instance_id = 'claude-secondary', last_error = 'Starting another session'
@@ -769,11 +762,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       );
       assert.equal(changedContext._tag, "Some");
       if (changedContext._tag === "Some") {
-        assert.deepEqual(changedContext.value.titleState, {
-          source: "generated",
-          version: "context-version",
-          needsRefinement: false,
-        });
         assert.equal(changedContext.value.session?.status, "starting");
         assert.equal(changedContext.value.session?.activeTurnId, null);
         assert.equal(changedContext.value.session?.providerName, "claudeAgent");

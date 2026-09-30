@@ -120,6 +120,9 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+// Refresh often enough to follow a thread that changes subject, rarely enough
+// that each check has several new turns to judge.
+const AUTOMATIC_TITLE_UPDATE_TURN_INTERVAL = 5;
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
 function providerErrorLabel(value: string | undefined): string {
@@ -1049,6 +1052,47 @@ const make = Effect.gen(function* () {
     });
   });
 
+  // Turns completed under each thread's current generated title. Kept in
+  // memory because a restart only postpones the next refresh.
+  const titleUpdateProgress = new Map<
+    ThreadId,
+    { readonly version: CommandId; readonly turnId: TurnId; readonly turns: number }
+  >();
+
+  /** With automatic title updates on, regenerate a generated title every few turns. */
+  const maybeUpdateThreadTitle = Effect.fn("maybeUpdateThreadTitle")(function* (
+    threadId: ThreadId,
+  ) {
+    // Runs after maybeRefineThreadTitle, whose in-flight regeneration skips this.
+    const thread = yield* resolveThreadShell(threadId);
+    const titleState = thread?.titleState;
+    const turn = thread?.latestTurn;
+    if (
+      titleState?.source !== "generated" ||
+      thread?.titleRegeneration != null ||
+      turn?.state !== "completed" ||
+      thread?.session?.status !== "ready"
+    )
+      return;
+    if (!(yield* serverSettingsService.getSettings).automaticThreadTitleUpdates) return;
+    const progress = titleUpdateProgress.get(threadId);
+    if (progress?.turnId === turn.turnId) return;
+    const turns = progress?.version === titleState.version ? progress.turns + 1 : 1;
+    const due = turns >= AUTOMATIC_TITLE_UPDATE_TURN_INTERVAL;
+    titleUpdateProgress.set(threadId, {
+      version: titleState.version,
+      turnId: turn.turnId,
+      turns: due ? 0 : turns,
+    });
+    if (!due) return;
+    yield* orchestrationEngine.dispatch({
+      type: "thread.title.refine",
+      commandId: yield* serverCommandId("thread-title-update"),
+      threadId,
+      expectedVersion: titleState.version,
+    });
+  });
+
   const regenerateThreadTitle = Effect.fn("regenerateThreadTitle")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.meta-updated" }>,
     requestId: CommandId,
@@ -1803,8 +1847,10 @@ const make = Effect.gen(function* () {
           yield* maybeRefineThreadTitle(event.payload.threadId);
         return;
       case "thread.session-set":
-        if (event.payload.session.status === "ready")
+        if (event.payload.session.status === "ready") {
           yield* maybeRefineThreadTitle(event.payload.threadId);
+          yield* maybeUpdateThreadTitle(event.payload.threadId);
+        }
         return;
       case "thread.runtime-mode-set": {
         const thread = yield* resolveThreadShell(event.payload.threadId);

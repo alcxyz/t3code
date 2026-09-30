@@ -22,16 +22,8 @@ import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 
 /** Server keys that hold a user preference rather than machine config. */
 const SHARED_SERVER_SETTING_KEYS = [
-  "automaticThreadTitles",
-  "automaticThreadTitleRenamePolicy",
-  "automaticThreadTitleRenameMaxCount",
-  "automaticThreadTitleRenameWindowHours",
-  "automaticThreadTitleRenameMinAgeMinutes",
-  "automaticThreadTitleRenameMinCompletedTurns",
-  "automaticThreadTitleRenameCooldownMinutes",
-  "automaticThreadTitleRenameMinFreshTurns",
-  "automaticThreadTitleRenameRollingLimitEnabled",
   "continueThreadsAfterServerUpdate",
+  "automaticThreadTitleUpdates",
   "sidebarAutoSettleAfterDays",
   "sidebarAutoSettleOnMerge",
   "newWorktreesStartFromOrigin",
@@ -41,9 +33,10 @@ const SHARED_SERVER_SETTING_KEYS = [
 
 export type SharedServerSettingKey = (typeof SHARED_SERVER_SETTING_KEYS)[number];
 
+/** Capabilities that gate shared keys older servers do not understand. */
 type SharedSettingsCapabilities = Pick<
   ExecutionEnvironmentCapabilities,
-  "automaticThreadTitles" | "threadRestartContinuation"
+  "threadRestartContinuation" | "automaticThreadTitleUpdates"
 >;
 
 const SHARED_KEY_SET = new Set<string>(SHARED_SERVER_SETTING_KEYS);
@@ -93,23 +86,12 @@ export function filterSharedServerPatch(
   ) {
     patch = Struct.omit(patch, ["textGenerationModelSelection"]);
   }
-  if (capabilities?.automaticThreadTitles !== true) {
-    patch = Struct.omit(patch, [
-      "automaticThreadTitles",
-      "automaticThreadTitleRenamePolicy",
-      "automaticThreadTitleRenameMaxCount",
-      "automaticThreadTitleRenameWindowHours",
-      "automaticThreadTitleRenameMinAgeMinutes",
-      "automaticThreadTitleRenameMinCompletedTurns",
-      "automaticThreadTitleRenameCooldownMinutes",
-      "automaticThreadTitleRenameMinFreshTurns",
-      "automaticThreadTitleRenameRollingLimitEnabled",
-    ]);
-  }
   if (capabilities?.threadRestartContinuation !== true) {
     patch = Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
   }
-  return patch;
+  return capabilities?.automaticThreadTitleUpdates === true
+    ? patch
+    : Struct.omit(patch, ["automaticThreadTitleUpdates"]);
 }
 
 /** The shared subset supported by one environment. */
@@ -161,9 +143,7 @@ export interface SharedSettingsEnvironment {
 export function findSharedSettingsMismatches(input: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly primarySettings: ServerSettings | null;
-  readonly primaryCapabilities?:
-    | Pick<ExecutionEnvironmentCapabilities, "automaticThreadTitles" | "threadRestartContinuation">
-    | undefined;
+  readonly primaryCapabilities?: SharedSettingsCapabilities | undefined;
   readonly environments: ReadonlyArray<SharedSettingsEnvironment>;
 }): ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }> {
   if (input.primaryEnvironmentId === null || input.primarySettings === null) {

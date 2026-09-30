@@ -35,7 +35,6 @@ import {
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   getWorkflowScript: "orchestration.getWorkflowScript",
-  getTitleUpdates: "orchestration.getTitleUpdates",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
@@ -795,7 +794,6 @@ export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
-  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
@@ -887,7 +885,6 @@ export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
-  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
@@ -1260,14 +1257,6 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   ),
 );
 
-const ThreadTitleRestoreCommand = Schema.Struct({
-  type: Schema.Literal("thread.title.restore"),
-  commandId: CommandId,
-  threadId: ThreadId,
-  title: TrimmedNonEmptyString,
-  expectedVersion: Schema.NullOr(CommandId),
-});
-
 const ThreadPullRequestLinkCommand = Schema.Struct({
   type: Schema.Literal("thread.pull-request.link"),
   commandId: CommandId,
@@ -1453,7 +1442,6 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadAutoSettleSetCommand,
   ThreadActiveReorderCommand,
   ThreadMetaUpdateCommand,
-  ThreadTitleRestoreCommand,
   ThreadPullRequestLinkCommand,
   ThreadPullRequestUnlinkCommand,
   ThreadRuntimeModeSetCommand,
@@ -1488,7 +1476,6 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadAutoSettleSetCommand,
   ThreadActiveReorderCommand,
   ThreadMetaUpdateCommand,
-  ThreadTitleRestoreCommand,
   ThreadPullRequestLinkCommand,
   ThreadPullRequestUnlinkCommand,
   ThreadRuntimeModeSetCommand,
@@ -1620,14 +1607,6 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
-const ThreadTitleAutomaticUpdateCommand = Schema.Struct({
-  type: Schema.Literal("thread.title.automatic.update"),
-  commandId: CommandId,
-  threadId: ThreadId,
-  expectedVersion: CommandId,
-  title: TrimmedNonEmptyString,
-});
-
 const ThreadTitleGenerateCompleteCommand = Schema.Struct({
   type: Schema.Literal("thread.title.generate.complete"),
   commandId: CommandId,
@@ -1695,7 +1674,6 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
-  ThreadTitleAutomaticUpdateCommand,
   ThreadTitleGenerateCompleteCommand,
   ThreadTitleRefineCommand,
   ThreadPullRequestSyncCommand,
@@ -1876,9 +1854,6 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   // new field while continuing to decode the event stream.
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   title: Schema.optional(TrimmedNonEmptyString),
-  /** Marks a guarded user restoration while retaining manual title ownership. */
-  titleRestoration: Schema.optional(Schema.Literal(true)),
-  titleAutoRenamedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   /** Intent marker consumed by the title-generation reactor. Keeping this on
       the existing event lets older clients safely ignore the new field. */
   regenerateTitle: Schema.optional(Schema.Literal(true)),
@@ -2389,66 +2364,7 @@ export class OrchestrationGetWorkflowScriptError extends Schema.TaggedError<Orch
   }
 }
 
-export const OrchestrationGetTitleUpdatesInput = Schema.Struct({ threadId: ThreadId });
-export const OrchestrationGetTitleUpdatesResult = Schema.Struct({
-  threadId: ThreadId,
-  checkedAt: IsoDateTime,
-  currentTitle: TrimmedNonEmptyString,
-  /** Missing when decoded from a server predating guarded title restoration. */
-  currentVersion: Schema.optional(Schema.NullOr(CommandId)),
-  /** Previous title when the current ownership is the latest automatic rename. */
-  undoTitle: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  profile: Schema.Literals(["rare", "balanced", "often", "custom"]),
-  status: Schema.Literals([
-    "disabled",
-    "protected",
-    "archived",
-    "deleted",
-    "snoozed",
-    "settled",
-    "regenerating",
-    "waiting",
-    "eligible",
-  ]),
-  /** Distinguishes native initial naming from recurring policy requirements. */
-  awaitingInitialTitle: Schema.optional(Schema.Boolean),
-  /** The current provider session started without the title tool. */
-  awaitingProviderSession: Schema.optional(Schema.Boolean),
-  phase: Schema.Literals(["initial", "recurring"]),
-  // Earliest time the time/window requirements pass; fresh activity is still required.
-  eligibleAt: Schema.NullOr(IsoDateTime),
-  completedTurns: NonNegativeInt,
-  requiredTurns: PositiveInt,
-  rollingCount: Schema.NullOr(NonNegativeInt),
-  rollingMaximum: Schema.NullOr(PositiveInt),
-  rollingWindowHours: Schema.NullOr(PositiveInt),
-  history: Schema.Array(
-    Schema.Struct({
-      id: TrimmedNonEmptyString,
-      at: IsoDateTime,
-      previousTitle: Schema.NullOr(TrimmedNonEmptyString),
-      title: TrimmedNonEmptyString,
-      version: Schema.optional(Schema.NullOr(CommandId)),
-      isRestoration: Schema.optional(Schema.Boolean),
-      source: Schema.Literals([
-        "initial",
-        "refinement",
-        "manual",
-        "regeneration",
-        "automatic",
-        "unknown",
-      ]),
-    }),
-  ),
-  hasMore: Schema.Boolean,
-});
-export type OrchestrationGetTitleUpdatesResult = typeof OrchestrationGetTitleUpdatesResult.Type;
-
 export const OrchestrationRpcSchemas = {
-  getTitleUpdates: {
-    input: OrchestrationGetTitleUpdatesInput,
-    output: OrchestrationGetTitleUpdatesResult,
-  },
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,

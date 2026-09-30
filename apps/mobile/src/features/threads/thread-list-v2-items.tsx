@@ -48,8 +48,6 @@ import {
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
-import { isThreadTitleRenameActive } from "./thread-title-presentation";
-import { ThreadTitleUpdateIndicator } from "./thread-title-update-indicator";
 
 /**
  * Thread List v2 renders one flat native list: rich edge-to-edge rows for
@@ -490,7 +488,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
   readonly onRenameThread: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => void;
-  readonly onOpenTitleUpdates: (thread: EnvironmentThreadShell) => void;
   readonly onSettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly onSnoozeThread: (thread: EnvironmentThreadShell, snoozedUntil: string) => void;
   readonly onUnsnoozeThread: (thread: EnvironmentThreadShell) => void;
@@ -510,7 +507,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly autoSettleOptOutSupported: boolean;
   /** False on servers that predate thread title regeneration. */
   readonly titleRegenerationSupported: boolean;
-  readonly titleUpdatesSupported: boolean;
   /** Server supports reordering this card's section. */
   readonly reorderSupported?: boolean;
   readonly onMoveThread?: (
@@ -539,7 +535,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     onDeleteThread,
     onRenameThread,
     onRegenerateThreadTitle,
-    onOpenTitleUpdates,
     onNewThreadOnBranch,
     onSettleThread,
     onSnoozeThread,
@@ -564,10 +559,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const status = resolveThreadListV2Status(thread);
   const statusLabel = STATUS_LABEL_BY_STATUS[status];
-  const titleRenameActive = props.titleUpdatesSupported && isThreadTitleRenameActive(thread);
-  const titleRenameIconTint = selected
-    ? selectedThreadRowColors.mutedIconTintClassName
-    : rowAppearance.mutedIconTintClassName;
   // The timestamp is precomputed on the list item (same stamps the settled
   // tail sorts by) so a minute tick only re-renders rows that draw it.
   const timeLabel = props.timeLabel;
@@ -577,10 +568,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
-  );
-  const handleOpenTitleUpdates = useCallback(
-    () => onOpenTitleUpdates(thread),
-    [onOpenTitleUpdates, thread],
   );
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
@@ -721,11 +708,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
       }),
-      ...(props.titleUpdatesSupported
-        ? [{ id: "title-updates", title: "Title updates…", image: "textformat" }]
-        : []),
     ],
-    [props.titleRegenerationSupported, props.titleUpdatesSupported, thread.titleRegeneration],
+    [props.titleRegenerationSupported, thread.titleRegeneration],
   );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -799,7 +783,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "move-up") handleMoveUp();
       if (nativeEvent.event === "move-down") handleMoveDown();
       if (nativeEvent.event === "archive") handleArchive();
-      if (nativeEvent.event === "title-updates") onOpenTitleUpdates(thread);
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "copy-thread-id") {
@@ -823,7 +806,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     },
     [
       onNewThreadOnBranch,
-      onOpenTitleUpdates,
       thread,
       handleArchive,
       handleDelete,
@@ -905,6 +887,26 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
+  // Static rather than spinning: the regeneration can take a while and a
+  // looping animation would repaint every row that shows it.
+  const titleRegenerationIcon =
+    thread.titleRegeneration != null ? (
+      <SymbolView
+        name="arrow.clockwise"
+        size={11}
+        tintColorClassName={rowAppearance.mutedIconTintClassName}
+        type="monochrome"
+      />
+    ) : null;
+  // The row is one accessible element, so nested labels are never read.
+  const rowAccessibilityLabel = [
+    thread.title,
+    props.hasQueuedMessages ? "messages queued to send" : null,
+    thread.titleRegeneration != null ? "regenerating title" : null,
+  ]
+    .filter((part) => part !== null)
+    .join(", ");
+
   // Sidebar rows use navigation foregrounds on their active and idle surfaces.
   const cardContent = (
     <>
@@ -930,6 +932,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         >
           {props.projectTitle ?? props.project?.title ?? ""}
         </Text>
+        {titleRegenerationIcon}
         {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
         {pinnedRow ? (
           <SymbolView
@@ -951,26 +954,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           {statusLabel?.label ?? timeLabel}
         </Text>
       </View>
-      <View className="mt-1 flex-row items-center gap-1.5">
-        <Text
-          className={cn(
-            "min-w-0 flex-1 text-base font-t3-medium",
-            selected
-              ? selectedThreadRowColors.foregroundClassName
-              : rowAppearance.foregroundClassName,
-          )}
-          numberOfLines={2}
-        >
-          {thread.title}
-        </Text>
-        {titleRenameActive ? (
-          <ThreadTitleUpdateIndicator
-            compact={false}
-            onPress={handleOpenTitleUpdates}
-            tintColorClassName={titleRenameIconTint}
-          />
-        ) : null}
-      </View>
+      <Text
+        className={cn(
+          "mt-1 text-base font-t3-medium",
+          selected
+            ? selectedThreadRowColors.foregroundClassName
+            : rowAppearance.foregroundClassName,
+        )}
+        numberOfLines={2}
+      >
+        {thread.title}
+      </Text>
       {props.searchMatch ? (
         <View className="mt-1">
           <ThreadSearchMatchExcerpt
@@ -1099,9 +1093,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionOpacity={rowAppearance.interactionOpacity}
         className={rowAppearance.className}
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
-        }
+        accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         onPress={() => {
@@ -1131,9 +1123,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionClassName={rowAppearance.interactionClassName}
         interactionOpacity={rowAppearance.interactionOpacity}
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
-        }
+        accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         className={rowAppearance.className}
@@ -1163,26 +1153,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </View>
           ) : null}
           <View className="min-w-0 flex-1">
-            <View className="flex-row items-center gap-1.5">
-              <Text
-                className={cn(
-                  "min-w-0 flex-1 text-base",
-                  selected
-                    ? selectedThreadRowColors.foregroundClassName
-                    : rowAppearance.mutedForegroundClassName,
-                )}
-                numberOfLines={1}
-              >
-                {thread.title}
-              </Text>
-              {titleRenameActive ? (
-                <ThreadTitleUpdateIndicator
-                  compact={false}
-                  onPress={handleOpenTitleUpdates}
-                  tintColorClassName={titleRenameIconTint}
-                />
-              ) : null}
-            </View>
+            <Text
+              className={cn(
+                "text-base",
+                selected
+                  ? selectedThreadRowColors.foregroundClassName
+                  : rowAppearance.mutedForegroundClassName,
+              )}
+              numberOfLines={1}
+            >
+              {thread.title}
+            </Text>
             {props.searchMatch ? (
               <ThreadSearchMatchExcerpt
                 sidebar={sidebarPane}
@@ -1192,6 +1173,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               />
             ) : null}
           </View>
+          {titleRegenerationIcon}
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           <Text
             className={cn(

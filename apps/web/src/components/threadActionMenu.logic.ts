@@ -21,7 +21,6 @@ export type ThreadActionMenuId =
   | `snooze:${string}`
   | "unsnooze"
   | "rename"
-  | "title-updates"
   | "regenerate-title"
   | "mark-unread"
   | "copy"
@@ -58,8 +57,6 @@ export interface ThreadActionMenuState {
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
-    /** Per-thread policy/history query, absent on older servers. */
-    readonly titleUpdates?: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -179,9 +176,6 @@ export function buildThreadActionMenuItems(
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },
-    ...(state.supports.titleUpdates
-      ? [{ id: "title-updates" as const, label: "Title updates", icon: "sparkles" }]
-      : []),
     { id: "project-settings", label: "Project settings", icon: "settings" },
     // Archive removes the thread from the sidebar while keeping its
     // conversation under Settings > Archived threads — distinct from Settle

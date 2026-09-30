@@ -1085,11 +1085,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                   ...prompt,
                   {
                     type: "text",
-                    text: buildRuntimeInstructions({
-                      harness: "Antigravity",
-                      model,
-                      currentThreadTitle: input.runtimeInstructions?.currentThreadTitle,
-                    }),
+                    text: buildRuntimeInstructions({ harness: "Antigravity", model }),
                   },
                 ],
               },
