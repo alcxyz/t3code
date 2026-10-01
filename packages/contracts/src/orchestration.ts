@@ -696,6 +696,8 @@ export const ThreadTitleState = Schema.Struct({
   needsRefinement: Schema.Boolean,
   /** The title this one replaced; absent until a thread is first renamed. */
   previousTitle: Schema.optional(TrimmedNonEmptyString),
+  /** When regeneration last changed the title; clients mark it until visited. */
+  renamedAt: Schema.optional(IsoDateTime),
 });
 export type ThreadTitleState = typeof ThreadTitleState.Type;
 
