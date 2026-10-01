@@ -694,6 +694,8 @@ export const ThreadTitleState = Schema.Struct({
   source: Schema.Literals(["manual", "generated"]),
   version: CommandId,
   needsRefinement: Schema.Boolean,
+  /** The title this one replaced; absent until a thread is first renamed. */
+  previousTitle: Schema.optional(TrimmedNonEmptyString),
 });
 export type ThreadTitleState = typeof ThreadTitleState.Type;
 

@@ -2,7 +2,9 @@ name: Sync and validate title fork releases
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    # Four times a day, ahead of nix-packages' six-hourly T3 scan. GitHub may
+    # start scheduled runs hours late; that scan flags channels left behind.
+    - cron: "17 3,9,15,21 * * *"
   workflow_dispatch:
 
 permissions:
