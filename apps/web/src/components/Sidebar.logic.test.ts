@@ -17,6 +17,7 @@ import {
   reduceSidebarProjectScopeMenuState,
   getFallbackThreadIdAfterDelete,
   getProjectSortTimestamp,
+  hasUnacknowledgedRename,
   hasUnseenCompletion,
   isContextMenuPointerDown,
   isSidebarNestedLinkClick,
@@ -53,6 +54,7 @@ import {
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
+  CommandId,
   EnvironmentId,
   OrchestrationLatestTurn,
   ProjectId,
@@ -2558,4 +2560,35 @@ describe("navigation after parking a thread", () => {
       ).toBe(expected);
     },
   );
+});
+
+describe("hasUnacknowledgedRename", () => {
+  const renamed = (latestUserMessageAt: string | null, settled = false) => ({
+    titleState: {
+      source: "generated" as const,
+      version: CommandId.make("refine"),
+      needsRefinement: false,
+      previousTitle: "Old title",
+      renamedAt: "2026-10-01T12:00:00.000Z",
+    },
+    latestUserMessageAt,
+    settledOverride: settled ? ("settled" as const) : null,
+  });
+
+  it("stays marked until the user writes in the thread", () => {
+    expect(hasUnacknowledgedRename(renamed("2026-10-01T11:00:00.000Z"))).toBe(true);
+    expect(hasUnacknowledgedRename(renamed(null))).toBe(true);
+    expect(hasUnacknowledgedRename(renamed("2026-10-01T12:30:00.000Z"))).toBe(false);
+  });
+
+  it("ignores settled threads and titles without a regeneration rename", () => {
+    expect(hasUnacknowledgedRename(renamed("2026-10-01T11:00:00.000Z", true))).toBe(false);
+    expect(
+      hasUnacknowledgedRename({
+        titleState: { source: "manual", version: CommandId.make("rename"), needsRefinement: false },
+        latestUserMessageAt: null,
+        settledOverride: null,
+      }),
+    ).toBe(false);
+  });
 });

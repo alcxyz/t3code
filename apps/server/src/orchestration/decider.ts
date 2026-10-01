@@ -66,12 +66,16 @@ const threadPullRequestLinksEqual = Schema.toEquivalence(Schema.NullOr(ThreadLin
  * failure detail marks the request stale/unknown — or settle would be
  * rejected on threads whose shell flags read as clear.
  */
-/** Carries the replaced title forward so clients can show what a thread was called. */
-function withPreviousTitle(
+/** Carries title history forward so clients can show what a thread was called. */
+function withTitleHistory(
   state: ThreadTitleState,
-  previousTitle: string | undefined,
+  history: Pick<ThreadTitleState, "previousTitle" | "renamedAt"> | null | undefined,
 ): ThreadTitleState {
-  return previousTitle === undefined ? state : { ...state, previousTitle };
+  return {
+    ...state,
+    ...(history?.previousTitle !== undefined ? { previousTitle: history.previousTitle } : {}),
+    ...(history?.renamedAt !== undefined ? { renamedAt: history.renamedAt } : {}),
+  };
 }
 
 function isStaleRequestFailureDetail(payload: Record<string, unknown> | null): boolean {
@@ -1027,17 +1031,23 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.title !== undefined
             ? {
                 title: command.title,
-                titleState: withPreviousTitle(
+                // The user's own rename drops the rename mark.
+                titleState: withTitleHistory(
                   { source: "manual", version: command.commandId, needsRefinement: false },
-                  command.title !== thread.title ? thread.title : thread.titleState?.previousTitle,
+                  {
+                    previousTitle:
+                      command.title !== thread.title
+                        ? thread.title
+                        : thread.titleState?.previousTitle,
+                  },
                 ),
               }
             : {}),
           ...(command.regenerateTitle === true
             ? {
-                titleState: withPreviousTitle(
+                titleState: withTitleHistory(
                   { source: "generated", version: command.commandId, needsRefinement: false },
-                  thread.titleState?.previousTitle,
+                  thread.titleState,
                 ),
                 regenerateTitle: true as const,
                 previousTitle: thread.title,
@@ -1310,9 +1320,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           ...(current
             ? {
-                titleState: withPreviousTitle(
+                titleState: withTitleHistory(
                   { source: "generated", version: command.commandId, needsRefinement: false },
-                  thread.titleState?.previousTitle,
+                  thread.titleState,
                 ),
                 regenerateTitle: true as const,
                 previousTitle: thread.title,
@@ -1346,7 +1356,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           ...(requestIsCurrent && command.title !== undefined ? { title: command.title } : {}),
           ...(renamed && thread.titleState != null
-            ? { titleState: { ...thread.titleState, previousTitle: thread.title } }
+            ? {
+                titleState: {
+                  ...thread.titleState,
+                  previousTitle: thread.title,
+                  renamedAt: occurredAt,
+                },
+              }
             : {}),
           ...(requestIsCurrent ? { titleRegeneration: null } : {}),
           updatedAt: requestIsCurrent ? occurredAt : thread.updatedAt,
