@@ -153,10 +153,12 @@ it.layer(NodeServices.layer)("title regeneration decider", (it) => {
         title,
       });
 
-      expect(yield* decidePayload(complete("Ship QR pairing"), regenerating)).toMatchObject({
+      const renamedPayload = yield* decidePayload(complete("Ship QR pairing"), regenerating);
+      expect(renamedPayload).toMatchObject({
         title: "Ship QR pairing",
         titleState: { ...generated, previousTitle: "Fix QR pairing expiry" },
       });
+      expect(renamedPayload).toHaveProperty("titleState.renamedAt");
       expect(
         yield* decidePayload(complete("Fix QR pairing expiry"), regenerating),
       ).not.toHaveProperty("titleState");
@@ -171,6 +173,7 @@ it.layer(NodeServices.layer)("title regeneration decider", (it) => {
           version: CommandId.make("generated"),
           needsRefinement: true,
           previousTitle: "Older title",
+          renamedAt: UPDATED_AT,
         },
         {
           latestTurn: {
@@ -199,9 +202,11 @@ it.layer(NodeServices.layer)("title regeneration decider", (it) => {
         title,
       });
 
-      expect(yield* decidePayload(rename("My own title"), model)).toMatchObject({
+      const manual = yield* decidePayload(rename("My own title"), model);
+      expect(manual).toMatchObject({
         titleState: { source: "manual", previousTitle: "Manual title" },
       });
+      expect(manual).not.toHaveProperty("titleState.renamedAt");
       expect(yield* decidePayload(rename("Manual title"), model)).toMatchObject({
         titleState: { source: "manual", previousTitle: "Older title" },
       });
@@ -215,7 +220,9 @@ it.layer(NodeServices.layer)("title regeneration decider", (it) => {
           },
           model,
         ),
-      ).toMatchObject({ titleState: { source: "generated", previousTitle: "Older title" } });
+      ).toMatchObject({
+        titleState: { source: "generated", previousTitle: "Older title", renamedAt: UPDATED_AT },
+      });
     }),
   );
 });

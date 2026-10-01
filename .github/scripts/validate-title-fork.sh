@@ -19,5 +19,6 @@ vp test run -t 'title|Title' \
 vp test run \
   packages/client-runtime/src/state/sharedSettings.test.ts \
   packages/client-runtime/src/state/entities.test.ts \
-  apps/web/src/components/settings/settingsSearch.test.ts
+  apps/web/src/components/settings/settingsSearch.test.ts \
+  apps/web/src/components/Sidebar.logic.test.ts
 vp run build:desktop
