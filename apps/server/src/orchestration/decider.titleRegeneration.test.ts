@@ -3,6 +3,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  TurnId,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -115,6 +116,106 @@ it.layer(NodeServices.layer)("title regeneration decider", (it) => {
       expect(event.payload).toMatchObject({
         titleState: { source: "manual", version: "manual-rename", needsRefinement: false },
       });
+    }),
+  );
+  const withTitleState = (
+    titleState: NonNullable<OrchestrationReadModel["threads"][number]["titleState"]>,
+    extra: Partial<OrchestrationReadModel["threads"][number]> = {},
+  ): OrchestrationReadModel => ({
+    ...readModel,
+    threads: readModel.threads.map((thread) => ({ ...thread, titleState, ...extra })),
+  });
+  const decidePayload = (
+    command: Parameters<typeof decideOrchestrationCommand>[0]["command"],
+    model: OrchestrationReadModel,
+  ) =>
+    decideOrchestrationCommand({ command, readModel: model }).pipe(
+      Effect.map((result) => (Array.isArray(result) ? result[0] : result).payload),
+    );
+
+  it.effect("records the replaced title when regeneration renames a thread", () =>
+    Effect.gen(function* () {
+      const generated = {
+        source: "generated" as const,
+        version: CommandId.make("refine"),
+        needsRefinement: false,
+        previousTitle: "Older title",
+      };
+      const regenerating = withTitleState(generated, {
+        title: "Fix QR pairing expiry",
+        titleRegeneration: { requestId: CommandId.make("refine"), startedAt: UPDATED_AT },
+      });
+      const complete = (title: string) => ({
+        type: "thread.title.regeneration.complete" as const,
+        commandId: CommandId.make(`complete-${title}`),
+        threadId: ThreadId.make("thread-1"),
+        requestId: CommandId.make("refine"),
+        title,
+      });
+
+      expect(yield* decidePayload(complete("Ship QR pairing"), regenerating)).toMatchObject({
+        title: "Ship QR pairing",
+        titleState: { ...generated, previousTitle: "Fix QR pairing expiry" },
+      });
+      expect(
+        yield* decidePayload(complete("Fix QR pairing expiry"), regenerating),
+      ).not.toHaveProperty("titleState");
+    }),
+  );
+
+  it.effect("keeps the previous title through manual renames and new regenerations", () =>
+    Effect.gen(function* () {
+      const model = withTitleState(
+        {
+          source: "generated",
+          version: CommandId.make("generated"),
+          needsRefinement: true,
+          previousTitle: "Older title",
+        },
+        {
+          latestTurn: {
+            turnId: TurnId.make("turn-1"),
+            state: "completed",
+            requestedAt: UPDATED_AT,
+            startedAt: UPDATED_AT,
+            completedAt: UPDATED_AT,
+            assistantMessageId: null,
+          },
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "ready",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: UPDATED_AT,
+          },
+        },
+      );
+      const rename = (title: string) => ({
+        type: "thread.meta.update" as const,
+        commandId: CommandId.make(`rename-${title}`),
+        threadId: ThreadId.make("thread-1"),
+        title,
+      });
+
+      expect(yield* decidePayload(rename("My own title"), model)).toMatchObject({
+        titleState: { source: "manual", previousTitle: "Manual title" },
+      });
+      expect(yield* decidePayload(rename("Manual title"), model)).toMatchObject({
+        titleState: { source: "manual", previousTitle: "Older title" },
+      });
+      expect(
+        yield* decidePayload(
+          {
+            type: "thread.title.refine",
+            commandId: CommandId.make("refresh"),
+            threadId: ThreadId.make("thread-1"),
+            expectedVersion: CommandId.make("generated"),
+          },
+          model,
+        ),
+      ).toMatchObject({ titleState: { source: "generated", previousTitle: "Older title" } });
     }),
   );
 });

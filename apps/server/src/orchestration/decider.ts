@@ -13,6 +13,7 @@ import {
   type ThreadPullRequestKey,
   type ThreadPullRequestLink,
   type OrchestrationThreadActivity,
+  type ThreadTitleState,
 } from "@t3tools/contracts";
 import {
   legacyLinkedPullRequestOf,
@@ -65,6 +66,14 @@ const threadPullRequestLinksEqual = Schema.toEquivalence(Schema.NullOr(ThreadLin
  * failure detail marks the request stale/unknown — or settle would be
  * rejected on threads whose shell flags read as clear.
  */
+/** Carries the replaced title forward so clients can show what a thread was called. */
+function withPreviousTitle(
+  state: ThreadTitleState,
+  previousTitle: string | undefined,
+): ThreadTitleState {
+  return previousTitle === undefined ? state : { ...state, previousTitle };
+}
+
 function isStaleRequestFailureDetail(payload: Record<string, unknown> | null): boolean {
   const detail = typeof payload?.detail === "string" ? payload.detail.toLowerCase() : null;
   if (detail === null) return false;
@@ -1018,20 +1027,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.title !== undefined
             ? {
                 title: command.title,
-                titleState: {
-                  source: "manual" as const,
-                  version: command.commandId,
-                  needsRefinement: false,
-                },
+                titleState: withPreviousTitle(
+                  { source: "manual", version: command.commandId, needsRefinement: false },
+                  command.title !== thread.title ? thread.title : thread.titleState?.previousTitle,
+                ),
               }
             : {}),
           ...(command.regenerateTitle === true
             ? {
-                titleState: {
-                  source: "generated" as const,
-                  version: command.commandId,
-                  needsRefinement: false,
-                },
+                titleState: withPreviousTitle(
+                  { source: "generated", version: command.commandId, needsRefinement: false },
+                  thread.titleState?.previousTitle,
+                ),
                 regenerateTitle: true as const,
                 previousTitle: thread.title,
                 titleRegeneration: {
@@ -1303,11 +1310,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           ...(current
             ? {
-                titleState: {
-                  source: "generated" as const,
-                  version: command.commandId,
-                  needsRefinement: false,
-                },
+                titleState: withPreviousTitle(
+                  { source: "generated", version: command.commandId, needsRefinement: false },
+                  thread.titleState?.previousTitle,
+                ),
                 regenerateTitle: true as const,
                 previousTitle: thread.title,
                 titleRegeneration: { requestId: command.commandId, startedAt: occurredAt },
@@ -1325,6 +1331,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         threadId: command.threadId,
       });
       const requestIsCurrent = thread.titleRegeneration?.requestId === command.requestId;
+      const renamed =
+        requestIsCurrent && command.title !== undefined && command.title !== thread.title;
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1337,6 +1345,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           ...(requestIsCurrent && command.title !== undefined ? { title: command.title } : {}),
+          ...(renamed && thread.titleState != null
+            ? { titleState: { ...thread.titleState, previousTitle: thread.title } }
+            : {}),
           ...(requestIsCurrent ? { titleRegeneration: null } : {}),
           updatedAt: requestIsCurrent ? occurredAt : thread.updatedAt,
         },
