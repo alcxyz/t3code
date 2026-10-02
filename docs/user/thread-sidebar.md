@@ -100,6 +100,16 @@ If dragging is unavailable for one environment, update the T3 Code server runnin
 environment. Pinned and active reordering require server support. Threads from older servers keep
 their default order until the server is updated.
 
+### Fold working threads (beta)
+
+On web and desktop, turn on **Settings → General → Working section (beta)** to move threads that
+are working or monitoring into a collapsed **Working** section at the bottom of the sidebar. A
+thread returns to the top of the active list when it finishes, fails, or needs an approval or
+answer. Pinned threads stay in the pinned section.
+
+While this is on, the active list is ordered by when each thread last came back to you, so you
+cannot drag to reorder it. Your saved order returns when you turn it off.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list
@@ -137,6 +147,7 @@ subject, turn on **Settings → General → Text generation → Keep thread titl
 on web and desktop, or **Settings → Agent behavior → Keep titles current** on mobile.
 Every few turns, the server checks the conversation with your text generation model
 and updates the title only when the old one no longer fits.
+An automatically renamed thread shows **Renamed** in the sidebar until you write in it.
 
 A title you rename yourself stays as it is. Choose **Regenerate title** from the
 thread's menu to hand it back to automatic naming.

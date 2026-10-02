@@ -1,7 +1,7 @@
 {
   "channel": "nightly",
-  "releaseTag": "v0.0.45-nightly.20261001.2539",
-  "version": "0.0.45-nightly.20261001.2539",
-  "upstreamRevision": "5cc99e1c23980d7995a13c47f969b47cb68ed1be",
-  "featureRevision": "d6bbc4bf7bd542935912264b7d17693890431cc2"
+  "releaseTag": "v0.0.45-nightly.20261002.2572",
+  "version": "0.0.45-nightly.20261002.2572",
+  "upstreamRevision": "99e08526e5ec84f294940cba5929841518c52fec",
+  "featureRevision": "4c2b03cb322a62cb84c5a74ea3421722ccb5075c"
 }
