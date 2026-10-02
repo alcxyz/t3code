@@ -696,7 +696,9 @@ export const ThreadTitleState = Schema.Struct({
   needsRefinement: Schema.Boolean,
   /** The title this one replaced; absent until a thread is first renamed. */
   previousTitle: Schema.optional(TrimmedNonEmptyString),
-  /** When regeneration last changed the title; clients mark it until visited. */
+  /** Set while the title comes from automatic title updates rather than a user action. */
+  automatic: Schema.optional(Schema.Literal(true)),
+  /** When an automatic update last changed the title; clients mark it until the user replies. */
   renamedAt: Schema.optional(IsoDateTime),
 });
 export type ThreadTitleState = typeof ThreadTitleState.Type;
@@ -1626,6 +1628,8 @@ const ThreadTitleRefineCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   expectedVersion: CommandId,
+  /** Sent by automatic title updates; marks a resulting rename for the user. */
+  automatic: Schema.optional(Schema.Literal(true)),
 });
 
 const ThreadTitleRegenerationCompleteCommand = Schema.Struct({

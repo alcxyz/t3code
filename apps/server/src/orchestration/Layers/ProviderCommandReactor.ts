@@ -1090,6 +1090,7 @@ const make = Effect.gen(function* () {
       commandId: yield* serverCommandId("thread-title-update"),
       threadId,
       expectedVersion: titleState.version,
+      automatic: true,
     });
   });
 

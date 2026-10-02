@@ -139,6 +139,7 @@ it.layer(NodeServices.layer)("title regeneration decider", (it) => {
         source: "generated" as const,
         version: CommandId.make("refine"),
         needsRefinement: false,
+        automatic: true as const,
         previousTitle: "Older title",
       };
       const regenerating = withTitleState(generated, {
@@ -223,6 +224,46 @@ it.layer(NodeServices.layer)("title regeneration decider", (it) => {
       ).toMatchObject({
         titleState: { source: "generated", previousTitle: "Older title", renamedAt: UPDATED_AT },
       });
+    }),
+  );
+
+  it.effect("marks only renames made by automatic title updates", () =>
+    Effect.gen(function* () {
+      const regenerating = (automatic: boolean): OrchestrationReadModel => ({
+        ...readModel,
+        threads: readModel.threads.map((thread) => ({
+          ...thread,
+          title: "Fix QR pairing expiry",
+          titleState: {
+            source: "generated" as const,
+            version: CommandId.make("refine"),
+            needsRefinement: false,
+            ...(automatic ? { automatic: true as const } : {}),
+          },
+          titleRegeneration: { requestId: CommandId.make("refine"), startedAt: UPDATED_AT },
+        })),
+      });
+      const complete = (model: OrchestrationReadModel, title: string) =>
+        decideOrchestrationCommand({
+          command: {
+            type: "thread.title.regeneration.complete",
+            commandId: CommandId.make(`complete-${title}`),
+            threadId: ThreadId.make("thread-1"),
+            requestId: CommandId.make("refine"),
+            title,
+          },
+          readModel: model,
+        }).pipe(Effect.map((result) => (Array.isArray(result) ? result[0] : result).payload));
+
+      expect(yield* complete(regenerating(true), "Ship QR pairing")).toHaveProperty(
+        "titleState.renamedAt",
+      );
+      expect(yield* complete(regenerating(false), "Ship QR pairing")).not.toHaveProperty(
+        "titleState.renamedAt",
+      );
+      expect(yield* complete(regenerating(true), "Fix QR pairing expiry")).not.toHaveProperty(
+        "titleState",
+      );
     }),
   );
 });
