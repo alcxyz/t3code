@@ -1,7 +1,7 @@
 {
   "channel": "stable",
-  "releaseTag": "v0.0.44",
-  "version": "0.0.44",
-  "upstreamRevision": "451afcb22d93f06cb24f9bc16703404564952553",
+  "releaseTag": "v0.0.45",
+  "version": "0.0.45",
+  "upstreamRevision": "6c8fed35dded9ff71c5b46807125457acbb76be6",
   "featureRevision": "4c2b03cb322a62cb84c5a74ea3421722ccb5075c"
 }
