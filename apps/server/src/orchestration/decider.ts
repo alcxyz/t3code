@@ -1320,8 +1320,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           ...(current
             ? {
+                // An unanswered rename stays marked through a check that keeps the title.
                 titleState: withTitleHistory(
-                  { source: "generated", version: command.commandId, needsRefinement: false },
+                  {
+                    source: "generated",
+                    version: command.commandId,
+                    needsRefinement: false,
+                    ...(command.automatic ? { automatic: true as const } : {}),
+                  },
                   thread.titleState,
                 ),
                 regenerateTitle: true as const,
@@ -1343,6 +1349,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const requestIsCurrent = thread.titleRegeneration?.requestId === command.requestId;
       const renamed =
         requestIsCurrent && command.title !== undefined && command.title !== thread.title;
+      // Only an automatic update renames behind the user's back; initial naming,
+      // its refinement, and a requested regeneration are expected.
+      const automaticRename = renamed && thread.titleState?.automatic === true;
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1360,7 +1369,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
                 titleState: {
                   ...thread.titleState,
                   previousTitle: thread.title,
-                  renamedAt: occurredAt,
+                  ...(automaticRename ? { renamedAt: occurredAt } : {}),
                 },
               }
             : {}),

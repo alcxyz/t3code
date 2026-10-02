@@ -1849,6 +1849,7 @@ describe("ProviderCommandReactor", () => {
       expect(thread?.title).toBe(
         manual ? "My own title" : calls > 0 ? "Ship QR pairing" : "Fix QR pairing expiry",
       );
+      expect(thread?.titleState?.renamedAt !== undefined).toBe(calls > 0);
     }),
   );
 

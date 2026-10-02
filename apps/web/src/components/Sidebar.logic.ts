@@ -656,7 +656,7 @@ export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
   return completedAt > lastVisitedAt;
 }
 
-/** Like a wake, a regeneration rename stays marked until the user writes in the thread. */
+/** Like a wake, an automatic rename stays marked until the user writes in the thread. */
 export function hasUnacknowledgedRename(
   thread: Pick<SidebarThreadSummary, "titleState" | "latestUserMessageAt" | "settledOverride">,
 ): boolean {

@@ -121,6 +121,7 @@ subject, turn on **Settings → General → Text generation → Keep thread titl
 on web and desktop, or **Settings → Agent behavior → Keep titles current** on mobile.
 Every few turns, the server checks the conversation with your text generation model
 and updates the title only when the old one no longer fits.
+An automatically renamed thread shows **Renamed** in the sidebar until you write in it.
 
 A title you rename yourself stays as it is. Choose **Regenerate title** from the
 thread's menu to hand it back to automatic naming.
