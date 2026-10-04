@@ -447,6 +447,9 @@ function SidebarThreadTooltip({
           ) : null
         }
       >
+        {thread.previousTitle ? (
+          <div className="min-w-0 text-muted-foreground">Previously: {thread.previousTitle}</div>
+        ) : null}
         {projectDisplayName ? (
           <div className="flex min-w-0 items-center gap-2">
             {project ? <ProjectFavicon project={project} className="size-3 shrink-0" /> : null}

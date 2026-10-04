@@ -359,6 +359,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
+  previousTitle: Schema.optional(Schema.String),
   providerInstanceId: ProviderInstanceId,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -1716,6 +1717,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: Schema.String,
+  previousTitle: Schema.optional(Schema.String),
   providerInstanceId: ProviderInstanceId,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -2667,6 +2669,7 @@ export const OrchestrationV2Command = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("thread.title.regeneration.complete"),
+    initial: Schema.optional(Schema.Boolean),
     commandId: CommandId,
     threadId: ThreadId,
     requestId: CommandId,

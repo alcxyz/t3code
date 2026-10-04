@@ -90,6 +90,7 @@ export interface EnvironmentThreadShell {
   readonly id: ThreadId;
   readonly projectId: ProjectId;
   readonly title: string;
+  readonly previousTitle?: string | undefined;
   readonly providerInstanceId: ProviderInstanceId;
   readonly modelSelection: OrchestrationV2ThreadShell["modelSelection"];
   readonly runtimeMode: OrchestrationV2ThreadShell["runtimeMode"];
@@ -227,6 +228,7 @@ export function presentThreadShell(
       thread.lineage.relationshipToParent === "subagent"
         ? formatSubagentDisplayTitle(thread.title)
         : thread.title,
+    previousTitle: thread.previousTitle,
     providerInstanceId: thread.providerInstanceId,
     modelSelection: thread.modelSelection,
     runtimeMode: thread.runtimeMode,

@@ -792,3 +792,101 @@ it.effect.each(["success", "exhausted", "stale", "interrupted"] as const)(
       }).pipe(Effect.provide(harness.layer));
     }),
 );
+
+describe("thread title history", () => {
+  it.effect(
+    "records manual and regenerated titles while preserving history for unchanged titles",
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness();
+        yield* Effect.gen(function* () {
+          const threads = yield* ThreadManagement.ThreadManagementService;
+          const generation = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+          const threadId = yield* createThread({
+            command: "command:history:create",
+            thread: "thread:history",
+          });
+          yield* dispatchUserMessage({
+            command: "command:history:message",
+            threadId,
+            text: "A conversation",
+          });
+          yield* threads.dispatch({
+            type: "thread.metadata.update",
+            commandId: CommandId.make("command:history:rename"),
+            threadId,
+            title: "Manual title",
+          });
+          assert.equal(
+            (yield* threads.getThreadProjection(threadId)).thread.previousTitle,
+            "Seed title",
+          );
+          yield* threads.dispatch({
+            type: "thread.metadata.update",
+            commandId: CommandId.make("command:history:same"),
+            threadId,
+            title: "Manual title",
+          });
+          assert.equal(
+            (yield* threads.getThreadProjection(threadId)).thread.previousTitle,
+            "Seed title",
+          );
+          const requestId = yield* armRegeneration({
+            command: "command:history:regenerate",
+            threadId,
+          });
+          yield* generation.execute({ threadId, requestId, kind: { type: "regenerate" } });
+          assert.equal(
+            (yield* threads.getThreadProjection(threadId)).thread.previousTitle,
+            "Manual title",
+          );
+          const unchanged = yield* armRegeneration({
+            command: "command:history:unchanged",
+            threadId,
+          });
+          yield* generation.execute({
+            threadId,
+            requestId: unchanged,
+            kind: { type: "regenerate" },
+          });
+          assert.equal(
+            (yield* threads.getThreadProjection(threadId)).thread.previousTitle,
+            "Manual title",
+          );
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
+  it.effect("does not record the seed when initial generation replaces it", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const generation = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+        const threadId = yield* createThread({
+          command: "command:history:initial-create",
+          thread: "thread:history:initial",
+        });
+        const requestId = CommandId.make("command:history:initial");
+        const messageId = MessageId.make("message:history:initial");
+        yield* threads.dispatch({
+          type: "message.dispatch",
+          commandId: requestId,
+          threadId,
+          messageId,
+          text: "Initial question",
+          titleSeed: "Initial question",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "defer_start" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* generation.execute({ threadId, requestId, kind: { type: "initial", messageId } });
+        const thread = (yield* threads.getThreadProjection(threadId)).thread;
+        assert.equal(thread.title, "Generated title");
+        assert.isUndefined(thread.previousTitle);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+});

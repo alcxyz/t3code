@@ -68,6 +68,13 @@ describe("scoped entity keys", () => {
 });
 
 describe("V2 client presentation", () => {
+  it("preserves the previous title in shell presentation", () => {
+    expect(
+      presentThreadShell(environmentId, { ...v2ThreadShell, previousTitle: "Older title" })
+        .previousTitle,
+    ).toBe("Older title");
+  });
+
   it("presents shell timestamps and status without constructing V1 state", () => {
     const shell = presentThreadShell(environmentId, v2ThreadShell);
     expect(shell.environmentId).toBe(environmentId);

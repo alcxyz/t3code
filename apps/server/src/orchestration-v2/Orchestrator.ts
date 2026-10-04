@@ -2668,7 +2668,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
       markUnreadVisitedAt = DateTime.subtract(latestRunCompletedAt, { milliseconds: 1 });
     }
-    const updatedThread: OrchestrationV2AppThread = (() => {
+    let updatedThread: OrchestrationV2AppThread = (() => {
       switch (command.type) {
         case "thread.archive":
           return { ...thread, archivedAt: now, titleRegeneration: null, updatedAt: now };
@@ -3081,6 +3081,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           };
       }
     })();
+    if (
+      updatedThread.title !== thread.title &&
+      !(command.type === "thread.title.regeneration.complete" && command.initial === true)
+    ) {
+      updatedThread = { ...updatedThread, previousTitle: thread.title };
+    }
     const eventType = (() => {
       switch (command.type) {
         case "thread.archive":

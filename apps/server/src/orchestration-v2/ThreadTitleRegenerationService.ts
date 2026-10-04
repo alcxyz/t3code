@@ -48,6 +48,7 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly requestId: CommandId;
     readonly title?: string;
+    readonly initial: boolean;
   }) =>
     threads
       .dispatch({
@@ -55,6 +56,7 @@ const make = Effect.gen(function* () {
         commandId: CommandId.make(`${input.requestId}:title-complete`),
         threadId: input.threadId,
         requestId: input.requestId,
+        initial: input.initial,
         ...(input.title === undefined ? {} : { title: input.title }),
       })
       .pipe(Effect.asVoid);
@@ -140,6 +142,7 @@ const make = Effect.gen(function* () {
     }
     yield* complete({
       ...input,
+      initial: input.kind.type === "initial",
       ...(outcome.title === undefined ? {} : { title: outcome.title }),
     });
   });
