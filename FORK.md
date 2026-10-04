@@ -18,12 +18,16 @@ See the upstream development instructions in [README.md](README.md) for
 prerequisites. Turn on Settings → General → Text generation → Keep thread
 titles current. Every fifth completed turn, the server reruns T3 Code's title
 regeneration for generated titles; titles you rename yourself are never
-changed. The fork also carries the regeneration indicator from
-[pingdotgg/t3code#13905](https://github.com/pingdotgg/t3code/pull/13905)
-until upstream merges it.
+changed. An automatically renamed thread shows **Renamed** until you write in
+it, and the sidebar hover card shows the previous title. The fork also carries
+the regeneration indicator from
+[pingdotgg/t3code#13905](https://github.com/pingdotgg/t3code/pull/13905).
 
-The hourly [sync workflow](https://github.com/alcxyz/t3code/actions/workflows/fork-sync.yml)
-checks published upstream release tags separately for stable and nightly. It
+The feature targets upstream's V2 orchestrator. Until an upstream stable
+release includes V2, `fork/stable` stays at its last V1 build.
+
+The [sync workflow](https://github.com/alcxyz/t3code/actions/workflows/fork-sync.yml)
+runs four times a day and checks published upstream release tags separately for stable and nightly. It
 applies the title feature to each release and advances a channel branch only
 after typechecks, title tests, and the desktop build pass. A channel skips work
 when its release and feature commit have not changed. Conflicts or failed

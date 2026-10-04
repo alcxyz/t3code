@@ -14,8 +14,6 @@ if ((${#title_tests[@]} == 0)); then
   exit 1
 fi
 vp test run "${title_tests[@]}"
-vp test run -t 'title|Title' \
-  apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts
 vp test run \
   packages/client-runtime/src/state/sharedSettings.test.ts \
   packages/client-runtime/src/state/entities.test.ts \
