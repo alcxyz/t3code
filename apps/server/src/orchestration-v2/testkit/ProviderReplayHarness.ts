@@ -188,6 +188,7 @@ export function runOrchestratorV2ProviderReplayScenario<
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    readonly automaticThreadTitleUpdates?: boolean;
   } = {},
 ): Effect.Effect<
   OrchestratorV2ScenarioResult,
@@ -233,6 +234,7 @@ export function makeOrchestratorV2ProviderReplayLayer<
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    readonly automaticThreadTitleUpdates?: boolean;
     readonly replayGate?: ProviderReplayGate;
   } = {},
 ): Layer.Layer<
@@ -262,6 +264,7 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    readonly automaticThreadTitleUpdates?: boolean;
   } = {},
 ): Layer.Layer<
   Orchestrator.OrchestratorV2 | EffectWorker.OrchestrationEffectWorkerV2 | EventSink.EventSinkV2,
@@ -285,6 +288,7 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
   const providedRegistryLayer = registryLayer.pipe(Layer.provide(continuationRequestsLayer));
   const serverSettingsLayer = ServerSettings.layerTest({
     responseStreamingMode: "turn",
+    automaticThreadTitleUpdates: options.automaticThreadTitleUpdates ?? false,
     ...(options.continueThreadsAfterServerUpdate === undefined
       ? {}
       : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
@@ -413,6 +417,7 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
     Layer.provide(
       Layer.mergeAll(
         checkpointServiceProvided,
+        serverSettingsLayer,
         CommandPolicy.layer,
         contextHandoffServiceProvided,
         persistenceLayer,

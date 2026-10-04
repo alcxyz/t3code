@@ -157,6 +157,18 @@ rules to connected environments that support shared settings. Offline environmen
 and older servers keep their previous values. Changing a rule does not reopen
 already settled threads.
 
+## Keep titles current
+
+T3 Code names each thread from its first message. To follow threads that change
+subject, turn on **Settings → General → Text generation → Keep thread titles current**
+on web and desktop, or **Settings → Agent behavior → Keep titles current** on mobile.
+After every fifth completed turn, the server checks the conversation with your text generation model
+and updates the title only when the old one no longer fits.
+An automatically renamed thread shows **Renamed** in the sidebar until you write in it.
+
+A title you rename yourself stays as it is. Choose **Regenerate title** from the
+thread's menu to hand it back to automatic naming.
+
 ## Link a pull request
 
 The server finds the PR for each unsettled thread's saved branch, even when your

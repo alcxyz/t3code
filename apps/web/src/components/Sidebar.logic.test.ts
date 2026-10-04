@@ -20,6 +20,7 @@ import {
   getProjectSortTimestamp,
   getSidebarForkParentThreadId,
   getSidebarThreadIdsToPrewarm,
+  hasUnacknowledgedRename,
   hasUnseenCompletion,
   isContextMenuPointerDown,
   isSidebarSubagentThread,
@@ -73,6 +74,30 @@ import {
 import { makeThreadFixture, type ThreadFixtureOverrides } from "../test-fixtures";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("hasUnacknowledgedRename", () => {
+  const renamed = (latestUserMessageAt: string | null, settled = false) => ({
+    renamedAt: "2026-10-01T12:00:00.000Z",
+    latestUserMessageAt,
+    settledOverride: settled ? ("settled" as const) : null,
+    settledAt: null,
+  });
+
+  it("stays marked until the user writes in the thread", () => {
+    expect(hasUnacknowledgedRename(renamed("2026-10-01T11:00:00.000Z"))).toBe(true);
+    expect(hasUnacknowledgedRename(renamed(null))).toBe(true);
+    expect(hasUnacknowledgedRename(renamed("2026-10-01T12:30:00.000Z"))).toBe(false);
+    expect(hasUnacknowledgedRename(renamed("2026-10-01T12:00:00.000Z"))).toBe(false);
+  });
+
+  it("ignores settled threads and titles without an automatic rename", () => {
+    expect(hasUnacknowledgedRename(renamed("2026-10-01T11:00:00.000Z", true))).toBe(false);
+    expect(hasUnacknowledgedRename({ ...renamed(null), renamedAt: null })).toBe(false);
+    expect(
+      hasUnacknowledgedRename({ ...renamed(null), settledAt: "2026-10-02T12:00:00.000Z" }),
+    ).toBe(false);
+  });
+});
 
 describe("resolveSidebarRowAccessibility", () => {
   it.each([

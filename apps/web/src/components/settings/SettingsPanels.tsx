@@ -629,6 +629,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
         ? ["Continue threads after restarts"]
         : []),
+      ...(settings.automaticThreadTitleUpdates !==
+      DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleUpdates
+        ? ["Keep thread titles current"]
+        : []),
       ...(isBackgroundActivityDirty ? ["Background activity"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
@@ -702,6 +706,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.persistComposerContextStrip,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
+      settings.automaticThreadTitleUpdates,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
@@ -816,6 +821,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+      automaticThreadTitleUpdates: DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleUpdates,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -2197,6 +2203,12 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
     );
+  const supportsAutomaticTitleUpdates =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) =>
+        target.serverConfig?.environment.capabilities.automaticThreadTitleUpdates === true,
+    );
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,
@@ -3326,6 +3338,44 @@ export function GeneralSettingsPanel() {
                 ) : null}
               </div>
             )
+          }
+        />
+
+        <SettingsRow
+          serverScoped
+          settingKeys={["automaticThreadTitleUpdates"]}
+          {...searchableSetting("automatic-thread-title-updates")}
+          description="Every few turns, update a generated thread title if the conversation has moved on. Titles you rename yourself stay as they are."
+          status={
+            hasServerTargets && !supportsAutomaticTitleUpdates
+              ? "All selected connected environments must support automatic title updates."
+              : undefined
+          }
+          resetAction={
+            supportsAutomaticTitleUpdates &&
+            settings.automaticThreadTitleUpdates !==
+              DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleUpdates ? (
+              <SettingResetButton
+                label="keep thread titles current"
+                onClick={() =>
+                  updateSettings({
+                    automaticThreadTitleUpdates:
+                      DEFAULT_UNIFIED_SETTINGS.automaticThreadTitleUpdates,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["automaticThreadTitleUpdates"]}
+              checked={settings.automaticThreadTitleUpdates}
+              disabled={!supportsAutomaticTitleUpdates}
+              onCheckedChange={(checked) =>
+                updateSettings({ automaticThreadTitleUpdates: Boolean(checked) })
+              }
+              aria-label="Keep thread titles current"
+            />
           }
         />
       </SettingsSection>

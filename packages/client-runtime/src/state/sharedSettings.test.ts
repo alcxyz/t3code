@@ -235,6 +235,17 @@ describe("filterSharedServerPatch", () => {
       );
     },
   );
+
+  it("shares automatic title updates only with servers that apply them", () => {
+    const patch = { automaticThreadTitleUpdates: true, sidebarAutoSettleAfterDays: 7 };
+    expect(filterSharedServerPatch(patch, { automaticThreadTitleUpdates: true })).toEqual(patch);
+    expect(filterSharedServerPatch(patch, restartCapabilities)).toEqual({
+      sidebarAutoSettleAfterDays: 7,
+    });
+    expect(filterSharedServerPatch(patch, undefined)).toEqual({
+      sidebarAutoSettleAfterDays: 7,
+    });
+  });
 });
 
 describe("findSharedSettingsMismatches", () => {

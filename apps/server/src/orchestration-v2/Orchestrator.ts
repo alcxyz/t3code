@@ -1,3 +1,4 @@
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   latestExecutedRun,
   latestRootProviderFailure,
@@ -77,6 +78,7 @@ import { CommandReceiptStoreV2 } from "./CommandReceiptStore.ts";
 import { ContextHandoffServiceV2 } from "./ContextHandoffService.ts";
 import { notificationTurnItem } from "./Notification.ts";
 import { isRestartNoteSource } from "./RestartBackgroundNote.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { isUndeliveredMailboxSteer } from "./NotificationMailbox.ts";
 import { EventSinkV2 } from "./EventSink.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -391,6 +393,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.pull-request.watch":
     case "thread.pull-request-watch.sync":
     case "thread.pull-request.sync":
+    case "thread.title.auto-update":
     case "thread.title.regeneration.complete":
     case "thread.runtime-mode.set":
     case "thread.interaction-mode.set":
@@ -734,6 +737,7 @@ function lastDeliveredRunForProviderThread(
 }
 
 const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(function* () {
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const checkpointService = yield* CheckpointServiceV2;
   const commandPolicy = yield* CommandPolicyV2;
   const contextHandoffService = yield* ContextHandoffServiceV2;
@@ -2803,7 +2807,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   };
           return {
             ...thread,
-            ...(command.title === undefined ? {} : { title: command.title }),
+            ...(command.title === undefined
+              ? {}
+              : { title: command.title, titleManuallyOwned: true, renamedAt: null }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&
             limitRecovery?.snooze === true &&
@@ -2853,7 +2859,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             // regenerateTitle: true arms the in-flight marker; a landing title
             // or an explicit false (generation failed/abandoned) clears it.
             ...(command.regenerateTitle === true
-              ? { titleRegeneration: { requestId: command.commandId, startedAt: now } }
+              ? {
+                  titleManuallyOwned: false,
+                  titleRegeneration: { requestId: command.commandId, startedAt: now },
+                }
               : command.regenerateTitle === false || command.title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
@@ -3045,7 +3054,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return thread.titleRegeneration?.requestId === command.requestId
             ? {
                 ...thread,
-                ...(command.title === undefined ? {} : { title: command.title }),
+                ...(command.title === undefined
+                  ? {}
+                  : {
+                      title: command.title,
+                      ...(command.title !== thread.title &&
+                      thread.titleRegeneration?.automatic === true
+                        ? { renamedAt: now }
+                        : {}),
+                    }),
                 titleRegeneration: null,
                 updatedAt: now,
               }
@@ -4450,6 +4467,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const onlyMaintenanceHistory =
         userMessages.length > 0 && userMessages.every(isNativeMaintenanceCommand);
       if (
+        !projection.thread.titleManuallyOwned &&
         !isNativeMaintenanceCommand(command) &&
         ((command.titleSeed !== undefined &&
           (yield* projectionStore
@@ -9388,6 +9406,57 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
   });
 
+  const dispatchAutomaticTitleUpdate = Effect.fn("orchestrationV2.dispatch.automaticTitleUpdate")(
+    function* (
+      command: Extract<OrchestrationV2ServerCommand, { type: "thread.title.auto-update" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+      effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+    ) {
+      const projection = yield* mapDispatchError(command)(
+        projectionStore.getThreadRecords(command.threadId, ["runs"], { runIds: [command.runId] }),
+      );
+      const thread = projection.thread;
+      const run = projection.runs[0];
+      const now = yield* DateTime.now;
+      const settings = resolveProjectSettings(
+        yield* mapDispatchError(command)(serverSettings.getSettings),
+        thread.projectId,
+      ).settings;
+      const eligible =
+        settings.automaticThreadTitleUpdates &&
+        thread.titleManuallyOwned !== true &&
+        thread.titleRegeneration == null &&
+        thread.archivedAt === null &&
+        thread.deletedAt === null &&
+        !isProviderNativeSubagentThread(thread) &&
+        run?.status === "completed";
+      const count = eligible
+        ? yield* mapDispatchError(command)(
+            projectionStore.getCompletedRunCount(thread.id, run.ordinal),
+          )
+        : 0;
+      if (count === 0 || count % 5 !== 0) return;
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "thread.metadata-updated",
+        threadId: command.threadId,
+        occurredAt: now,
+        payload: {
+          ...thread,
+          titleRegeneration: { requestId: command.commandId, startedAt: now, automatic: true },
+        },
+      });
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        pendingThreadTitleGenerationEffect(command.commandId, command.threadId, {
+          type: "regenerate",
+        }),
+      ]);
+    },
+  );
+
   const dispatchUnsupported = (command: OrchestrationV2ServerCommand) =>
     Effect.fail(
       new OrchestratorDispatchError({
@@ -9491,6 +9560,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           }),
         );
       }
+      case "thread.title.auto-update":
+        yield* dispatchAutomaticTitleUpdate(command, events, effects);
+        break;
       case "thread.archive":
       case "thread.unarchive":
       case "thread.settle":
@@ -9739,7 +9811,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       Effect.flatMap((planned) =>
         // A settle that finds the provider already ended everything has
         // nothing to record, which is its expected outcome, not a failure.
-        planned.events.length > 0 || command.type === "thread.background-work.settle"
+        planned.events.length > 0 ||
+        command.type === "thread.background-work.settle" ||
+        command.type === "thread.title.auto-update"
           ? Effect.succeed(planned)
           : Effect.fail(
               new OrchestratorDispatchError({
@@ -9866,6 +9940,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const handleTerminalRun = (stored: OrchestrationV2StoredEvent) =>
     Effect.gen(function* () {
       const threadId = stored.event.threadId;
+      // Stable command receipts deduplicate repeated terminal updates; the guard
+      // counts persisted completed runs through this run, even if newer runs ended.
+      if (
+        stored.event.type === "run.updated" &&
+        stored.event.payload.status === "completed" &&
+        (yield* serverSettings.getSettings).automaticThreadTitleUpdates
+      ) {
+        yield* dispatchWithReceipt({
+          type: "thread.title.auto-update",
+          commandId: CommandId.make(`command:auto-title:${stored.event.payload.id}`),
+          threadId,
+          runId: stored.event.payload.id,
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Automatic title update skipped", { threadId, cause }),
+          ),
+        );
+      }
       // finalize writes the parent thread and startNextQueuedRun writes this
       // thread, so each takes its own thread's lock, sequentially and never
       // nested: dispatchDelegatedTaskRequest already writes child events
@@ -10145,6 +10237,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 export const layer: Layer.Layer<
   OrchestratorV2,
   never,
+  | ServerSettings.ServerSettingsService
   | CheckpointServiceV2
   | FileSystem.FileSystem
   | Path.Path

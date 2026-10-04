@@ -207,6 +207,10 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     (target) =>
       target.environment.serverConfig.environment.capabilities.threadRestartContinuation === true,
   );
+  const supportsAutomaticTitleUpdates = targets.every(
+    (target) =>
+      target.environment.serverConfig.environment.capabilities.automaticThreadTitleUpdates === true,
+  );
   const disabledFor = (key: string) =>
     disabled ||
     (projectSelected &&
@@ -387,6 +391,24 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       value={uniform("enableAgentBrowserAccess")}
                       disabled={disabledFor("enableAgentBrowserAccess")}
                       onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
+                    />
+                  </SettingsSection>
+                  <SettingsSection title="Thread titles">
+                    <SettingsSwitchRow
+                      icon="text.bubble"
+                      label="Keep titles current"
+                      subtitle={
+                        projectSelected
+                          ? "Environment-wide setting. Select All projects to change it."
+                          : supportsAutomaticTitleUpdates
+                            ? "Update generated titles as the conversation moves on."
+                            : "Update older servers to keep titles current."
+                      }
+                      value={uniform("automaticThreadTitleUpdates")}
+                      disabled={
+                        disabledFor("automaticThreadTitleUpdates") || !supportsAutomaticTitleUpdates
+                      }
+                      onValueChange={(value) => write({ automaticThreadTitleUpdates: value })}
                     />
                   </SettingsSection>
                 </>

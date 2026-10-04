@@ -587,9 +587,18 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   // label as the web sidebar, sourced from the server-side visited watermark
   // so checking a thread on any device clears it everywhere.
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
+  const isRenamed =
+    thread.renamedAt != null &&
+    thread.settledAt == null &&
+    thread.settledOverride !== "settled" &&
+    (thread.latestUserMessageAt == null || thread.renamedAt > thread.latestUserMessageAt);
   const statusLabel =
     STATUS_LABEL_BY_STATUS[status] ??
-    (isUnread ? { label: "Done", className: "text-adaptive-emerald-700-300" } : undefined);
+    (isUnread
+      ? { label: "Done", className: "text-adaptive-emerald-700-300" }
+      : isRenamed
+        ? { label: "Renamed", className: "text-adaptive-sky-600-400" }
+        : undefined);
   // The timestamp is precomputed on the list item (same stamps the settled
   // tail sorts by) so a minute tick only re-renders rows that draw it.
   const timeLabel = props.timeLabel;

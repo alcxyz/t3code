@@ -775,6 +775,21 @@ export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
   return completedAt > lastVisitedAt;
 }
 
+/** An automatic rename stays marked until the user writes in the thread. */
+export function hasUnacknowledgedRename(
+  thread: Pick<
+    SidebarThreadSummary,
+    "renamedAt" | "latestUserMessageAt" | "settledOverride" | "settledAt"
+  >,
+): boolean {
+  const renamedAt = Date.parse(thread.renamedAt ?? "");
+  if (Number.isNaN(renamedAt) || thread.settledOverride === "settled" || thread.settledAt != null)
+    return false;
+  if (!thread.latestUserMessageAt) return true;
+  const latestUserMessageAt = Date.parse(thread.latestUserMessageAt);
+  return Number.isNaN(latestUserMessageAt) || renamedAt > latestUserMessageAt;
+}
+
 export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null): boolean {
   if (target === null) return true;
   return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);

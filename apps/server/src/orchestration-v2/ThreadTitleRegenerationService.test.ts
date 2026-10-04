@@ -2,6 +2,8 @@ import { assert, describe, it, vi } from "@effect/vitest";
 import {
   type ChatAttachment,
   CommandId,
+  EventId,
+  RunId,
   MessageId,
   ProjectId,
   ProviderDriverKind,
@@ -9,6 +11,10 @@ import {
   ThreadId,
   TextGenerationError,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
+import * as Stream from "effect/Stream";
+import * as Orchestrator from "./Orchestrator.ts";
+import * as EventSink from "./EventSink.ts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -44,6 +50,7 @@ const adapter = {
 
 function makeHarness(
   options: {
+    readonly automaticThreadTitleUpdates?: boolean;
     readonly generateTitle?: TextGeneration.TextGeneration["Service"]["generateThreadTitle"];
   } = {},
 ) {
@@ -52,7 +59,11 @@ function makeHarness(
   const orchestrator = makeOrchestratorV2ReplayLayerWithRegistry(
     { name: "thread-title-regeneration" },
     registry,
-    { databaseLayer: database, runEffectWorker: false },
+    {
+      databaseLayer: database,
+      runEffectWorker: false,
+      automaticThreadTitleUpdates: options.automaticThreadTitleUpdates ?? false,
+    },
   );
   const threadManagement = ThreadManagement.layer.pipe(Layer.provide(orchestrator));
   const outbox = EffectOutbox.layer.pipe(Layer.provide(database));
@@ -91,7 +102,7 @@ function makeHarness(
     ),
   );
   return {
-    layer: Layer.mergeAll(threadManagement, titleRegeneration, outbox, database),
+    layer: Layer.mergeAll(orchestrator, threadManagement, titleRegeneration, outbox, database),
     generateThreadTitle,
   };
 }
@@ -151,6 +162,59 @@ function armRegeneration(input: { readonly command: string; readonly threadId: T
       regenerateTitle: true,
     });
     return requestId;
+  });
+}
+
+function seedCompletedRuns(
+  threadId: ThreadId,
+  count: number,
+  failedOrdinals: ReadonlyArray<number> = [],
+) {
+  return Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const now = yield* DateTime.now;
+    for (let ordinal = 1; ordinal <= count; ordinal++) {
+      yield* sink.write({
+        events: [
+          {
+            id: EventId.make(`event:${threadId}:run:${ordinal}`),
+            type: "run.created",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: RunId.make(`run:${threadId}:${ordinal}`),
+              threadId,
+              ordinal,
+              providerInstanceId: modelSelection.instanceId,
+              modelSelection,
+              providerThreadId: null,
+              userMessageId: MessageId.make(`message:${threadId}:${ordinal}`),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status: failedOrdinals.includes(ordinal) ? "failed" : "completed",
+              requestedAt: now,
+              startedAt: now,
+              completedAt: now,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          },
+        ],
+      });
+    }
+  });
+}
+
+function automaticUpdate(threadId: ThreadId, ordinal: number) {
+  return Effect.gen(function* () {
+    const engine = yield* Orchestrator.OrchestratorV2;
+    const runId = RunId.make(`run:${threadId}:${ordinal}`);
+    return yield* engine.dispatch({
+      type: "thread.title.auto-update",
+      commandId: CommandId.make(`command:auto-title:${runId}`),
+      threadId,
+      runId,
+    });
   });
 }
 
@@ -219,6 +283,230 @@ describe("formatThreadTitleContext", () => {
 });
 
 describe("ThreadTitleRegenerationService", () => {
+  it.effect("regenerates on every fifth completed run through the terminal-run listener", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ automaticThreadTitleUpdates: true });
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const engine = yield* Orchestrator.OrchestratorV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const threadId = yield* createThread({
+          command: "command:cadence:create",
+          thread: "thread:cadence",
+        });
+        yield* seedCompletedRuns(threadId, 10);
+        for (const ordinal of [1, 2, 3, 4, 6, 7, 8, 9]) {
+          assert.equal((yield* automaticUpdate(threadId, ordinal)).storedEvents.length, 0);
+        }
+        for (const ordinal of [5, 10]) {
+          const runId = RunId.make(`run:${threadId}:${ordinal}`);
+          const requestId = CommandId.make(`command:auto-title:${runId}`);
+          const landed = yield* engine.streamStoredEvents.pipe(
+            Stream.filter((stored) => stored.commandId === requestId),
+            Stream.take(1),
+            Stream.runCollect,
+            Effect.forkScoped,
+          );
+          const run = (yield* threads.getThreadRecords(threadId, ["runs"], { runIds: [runId] }))
+            .runs[0]!;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make(`event:complete:${ordinal}`),
+                type: "run.updated",
+                threadId,
+                occurredAt: yield* DateTime.now,
+                payload: run,
+              },
+            ],
+          });
+          yield* Fiber.join(landed);
+          assert.equal(
+            (yield* threads.getThreadProjection(threadId)).thread.titleRegeneration?.automatic,
+            true,
+          );
+          assert.deepEqual(
+            (yield* outbox.listByCommandId(requestId)).map((effect) => effect.request),
+            [{ type: "thread-title.generate", kind: { type: "regenerate" } }],
+          );
+          yield* threads.dispatch({
+            type: "thread.title.regeneration.complete",
+            commandId: CommandId.make(`command:land:${ordinal}`),
+            threadId,
+            requestId,
+            title: `Title ${ordinal}`,
+          });
+          assert.isOk((yield* threads.getThreadProjection(threadId)).thread.renamedAt);
+          assert.isOk((yield* engine.getThreadShell(threadId))?.renamedAt);
+          yield* automaticUpdate(threadId, ordinal);
+          assert.equal((yield* outbox.listByCommandId(requestId)).length, 1);
+        }
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("counts completed runs rather than attempted turn ordinals", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ automaticThreadTitleUpdates: true });
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const threadId = yield* createThread({
+          command: "command:failures:create",
+          thread: "thread:failures",
+        });
+        yield* seedCompletedRuns(threadId, 7, [1, 3]);
+        assert.equal((yield* automaticUpdate(threadId, 6)).storedEvents.length, 0);
+        yield* automaticUpdate(threadId, 7);
+        assert.isTrue(
+          (yield* threads.getThreadProjection(threadId)).thread.titleRegeneration?.automatic,
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect.each([
+    "disabled",
+    "manual",
+    "in-flight",
+    "archived",
+    "deleted",
+    "native-subagent",
+  ] as const)("skips automatic titles when %s", (skip) =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ automaticThreadTitleUpdates: skip !== "disabled" });
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const threadId = yield* createThread({
+          command: `command:skip:${skip}`,
+          thread: `thread:skip:${skip}`,
+        });
+        yield* seedCompletedRuns(threadId, 5);
+        if (skip === "manual")
+          yield* threads.dispatch({
+            type: "thread.metadata.update",
+            commandId: CommandId.make("command:manual"),
+            threadId,
+            title: "My title",
+          });
+        if (skip === "in-flight")
+          yield* armRegeneration({ command: "command:in-flight", threadId });
+        if (skip === "archived")
+          yield* threads.dispatch({
+            type: "thread.archive",
+            commandId: CommandId.make("command:archive"),
+            threadId,
+          });
+        if (skip === "deleted" || skip === "native-subagent") {
+          const sink = yield* EventSink.EventSinkV2;
+          const thread = (yield* threads.getThreadProjection(threadId)).thread;
+          const now = yield* DateTime.now;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make(`event:${skip}`),
+                type: "thread.metadata-updated",
+                threadId,
+                occurredAt: now,
+                payload: {
+                  ...thread,
+                  ...(skip === "deleted"
+                    ? { deletedAt: now }
+                    : {
+                        creationSource: "provider" as const,
+                        lineage: {
+                          ...thread.lineage,
+                          relationshipToParent: "subagent" as const,
+                          parentThreadId: ThreadId.make("parent"),
+                        },
+                      }),
+                },
+              },
+            ],
+          });
+        }
+        assert.equal((yield* automaticUpdate(threadId, 5)).storedEvents.length, 0);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("manual regeneration returns ownership without setting a rename timestamp", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ automaticThreadTitleUpdates: true });
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const threadId = yield* createThread({
+          command: "command:ownership:create",
+          thread: "thread:ownership",
+        });
+        yield* threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make("command:ownership:rename"),
+          threadId,
+          title: "Manual",
+        });
+        assert.isTrue((yield* threads.getThreadProjection(threadId)).thread.titleManuallyOwned);
+        const requestId = yield* armRegeneration({
+          command: "command:ownership:regenerate",
+          threadId,
+        });
+        assert.isFalse((yield* threads.getThreadProjection(threadId)).thread.titleManuallyOwned);
+        yield* threads.dispatch({
+          type: "thread.title.regeneration.complete",
+          commandId: CommandId.make("command:ownership:complete"),
+          threadId,
+          requestId,
+          title: "Generated",
+        });
+        assert.isNotOk((yield* threads.getThreadProjection(threadId)).thread.renamedAt);
+        yield* seedCompletedRuns(threadId, 5);
+        yield* automaticUpdate(threadId, 5);
+        assert.isTrue(
+          (yield* threads.getThreadProjection(threadId)).thread.titleRegeneration?.automatic,
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("initial title generation does not set a rename timestamp", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const threadId = yield* createThread({
+          command: "command:initial:create",
+          thread: "thread:initial",
+        });
+        const requestId = CommandId.make("command:initial:message");
+        yield* threads.dispatch({
+          type: "message.dispatch",
+          commandId: requestId,
+          threadId,
+          messageId: MessageId.make("message:initial"),
+          text: "First question",
+          titleSeed: "First question",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "defer_start" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        assert.equal(
+          (yield* threads.getThreadProjection(threadId)).thread.titleRegeneration?.requestId,
+          requestId,
+        );
+        yield* threads.dispatch({
+          type: "thread.title.regeneration.complete",
+          commandId: CommandId.make("command:initial:complete"),
+          threadId,
+          requestId,
+          title: "Generated",
+        });
+        assert.isNotOk((yield* threads.getThreadProjection(threadId)).thread.renamedAt);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
   it.effect("arms and clears the regeneration marker through metadata commands", () =>
     Effect.gen(function* () {
       const harness = makeHarness();

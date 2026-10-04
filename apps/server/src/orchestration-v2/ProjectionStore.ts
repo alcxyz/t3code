@@ -317,6 +317,10 @@ export interface ProjectionStoreV2Shape {
     threadId: ThreadId,
     options: ProjectionTimelinePageOptions,
   ) => Effect.Effect<ProjectionTimelinePage, ProjectionStoreV2Error>;
+  readonly getCompletedRunCount: (
+    threadId: ThreadId,
+    throughOrdinal: number,
+  ) => Effect.Effect<number, ProjectionStoreV2Error>;
   readonly getMessageCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
   readonly getNextTurnItemOrdinal: (
     threadId: ThreadId,
@@ -1419,6 +1423,8 @@ export function threadShellFromProjection(
     autoSettleDisabledAt: projection.thread.autoSettleDisabledAt ?? null,
     pinOrderKey: projection.thread.pinOrderKey ?? null,
     lastVisitedAt: projection.thread.lastVisitedAt,
+    titleManuallyOwned: projection.thread.titleManuallyOwned,
+    renamedAt: projection.thread.renamedAt,
     titleRegeneration: projection.thread.titleRegeneration ?? null,
     limitRecovery: projection.thread.limitRecovery ?? null,
     deletedAt: projection.thread.deletedAt,
@@ -1643,6 +1649,8 @@ function shellFromState(input: {
     autoSettleDisabledAt: input.state.thread.autoSettleDisabledAt ?? null,
     pinOrderKey: input.state.thread.pinOrderKey ?? null,
     lastVisitedAt: input.state.thread.lastVisitedAt,
+    titleManuallyOwned: input.state.thread.titleManuallyOwned,
+    renamedAt: input.state.thread.renamedAt,
     titleRegeneration: input.state.thread.titleRegeneration ?? null,
     limitRecovery: input.state.thread.limitRecovery ?? null,
     deletedAt: input.state.thread.deletedAt,
@@ -4487,6 +4495,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         )
         .pipe(Effect.mapError(controlReadError(threadId)));
 
+    const getCompletedRunCount: ProjectionStoreV2Shape["getCompletedRunCount"] = (
+      threadId,
+      throughOrdinal,
+    ) =>
+      sql<{ count: number }>`SELECT COUNT(*) AS count FROM orchestration_v2_projection_runs
+        WHERE thread_id = ${threadId} AND status = 'completed' AND ordinal <= ${throughOrdinal}`.pipe(
+        Effect.map((rows) => rows[0]?.count ?? 0),
+        Effect.mapError(controlReadError(threadId)),
+      );
     const getMessageCount: ProjectionStoreV2Shape["getMessageCount"] = (threadId) =>
       sql<{
         count: number;
@@ -5521,6 +5538,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       canStartQueuedRun,
       getPendingNativeUserInputs,
       hasUnpairedRunInterruptRequest,
+      getCompletedRunCount,
       getMessageCount,
       getNextTurnItemOrdinal,
       getThreadRecords,
@@ -5765,6 +5783,16 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
             !projection.turnItems.some((item) => item.id === resultId)
           );
         }),
+      getCompletedRunCount: (threadId, throughOrdinal) =>
+        Ref.get(replayState).pipe(
+          Effect.map(
+            (state) =>
+              state.projections
+                .get(threadId)
+                ?.runs.filter((run) => run.status === "completed" && run.ordinal <= throughOrdinal)
+                .length ?? 0,
+          ),
+        ),
       getMessageCount: (threadId) =>
         Ref.get(replayState).pipe(
           Effect.map((state) => state.projections.get(threadId)?.messages.length ?? 0),

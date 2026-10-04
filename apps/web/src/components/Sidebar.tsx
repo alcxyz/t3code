@@ -71,6 +71,7 @@ import {
   FolderIcon,
   GitBranchIcon,
   MessageCircleQuestionIcon,
+  PencilLineIcon,
   PinIcon,
   PinOffIcon,
   PlusIcon,
@@ -181,6 +182,7 @@ import {
   filterSidebarProjectScopeItems,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
+  hasUnacknowledgedRename,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
   isSidebarThreadWorking,
@@ -1241,6 +1243,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     wokeAtDate !== null &&
     (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
     thread.settledOverride !== "settled";
+  const isRenamed = hasUnacknowledgedRename(thread);
   // Background work always recedes when it is not selected: an unread parent
   // completion must not pull a still-working thread back into the foreground.
   // Ready and action-required rows keep their unread and wake prominence.
@@ -1307,7 +1310,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         icon: "done" as const,
                         className: "text-success",
                       }
-                    : null;
+                    : isRenamed
+                      ? {
+                          label: "Renamed",
+                          icon: "renamed" as const,
+                          className: "text-info-foreground",
+                        }
+                      : null;
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -1825,6 +1834,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       />
                       <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                     </Tooltip>
+                  ) : isRenamed ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-info-foreground">
+                      <PencilLineIcon aria-hidden className="size-3" />
+                      <span role="status">Renamed</span>
+                    </span>
                   ) : (
                     <span className="text-xs">
                       {variantAction === "unsettle"
@@ -2008,6 +2022,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                             <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
                           ) : topStatus.icon === "done" ? (
                             <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "renamed" ? (
+                            <PencilLineIcon aria-hidden className="size-4 shrink-0" />
                           ) : null}
                           {/* The label alone is the live region: a role="status"
                             wrapper around the ticking duration would make

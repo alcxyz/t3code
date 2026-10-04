@@ -408,11 +408,15 @@ export const OrchestrationV2AppThread = Schema.Struct({
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtc).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  /** A manual rename opts out until the user requests regeneration. */
+  titleManuallyOwned: Schema.optional(Schema.Boolean),
+  renamedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   /** In-flight title regeneration marker; cleared when a new title lands. */
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
         requestId: CommandId,
+        automatic: Schema.optional(Schema.Boolean),
         startedAt: Schema.DateTimeUtc,
       }),
     ),
@@ -1782,11 +1786,14 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
    * back to their local visited state when the field is absent.
    */
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  titleManuallyOwned: Schema.optional(Schema.Boolean),
+  renamedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   /** In-flight title regeneration marker; null/absent when no request is pending. */
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
         requestId: CommandId,
+        automatic: Schema.optional(Schema.Boolean),
         startedAt: Schema.DateTimeUtc,
       }),
     ),
@@ -1871,10 +1878,12 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtcFromString).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  renamedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
         requestId: CommandId,
+        automatic: Schema.optional(Schema.Boolean),
         startedAt: Schema.DateTimeUtcFromString,
       }),
     ),
@@ -2279,10 +2288,12 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  renamedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
         requestId: CommandId,
+        automatic: Schema.optional(Schema.Boolean),
         startedAt: Schema.DateTimeUtcFromString,
       }),
     ),
@@ -2927,6 +2938,12 @@ const OrchestrationV2InternalCommand = Schema.Union([
         notification: OrchestrationV2Notification,
       }),
     ),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.title.auto-update"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
   }),
   /** Records that the provider rollback `requestId` failed for good. */
   Schema.Struct({

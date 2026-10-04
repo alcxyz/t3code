@@ -76,6 +76,16 @@ describe("V2 client presentation", () => {
     expect(shell.source).toBe(v2ThreadShell);
   });
 
+  it("preserves automatic rename timestamps for unread title marks", () => {
+    const shell = presentThreadShell(environmentId, {
+      ...v2ThreadShell,
+      renamedAt: DateTime.makeUnsafe("2026-10-01T12:00:00.000Z"),
+    });
+
+    expect(shell.renamedAt).toBe("2026-10-01T12:00:00.000Z");
+    expect(presentThreadShell(environmentId, v2ThreadShell).renamedAt).toBeNull();
+  });
+
   it("preserves active ordering and both pull-request sources", () => {
     const linkedPullRequest = {
       projectId: v2ThreadShell.projectId,
