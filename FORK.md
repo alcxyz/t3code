@@ -1,5 +1,11 @@
 # Automatic thread titles
 
+> **Unmaintained.** Since October 2026 this fork no longer follows upstream.
+> `fork/nightly` and `fork/stable` stay at their last validated commits
+> (`v0.0.46-nightly.20261005.2689` and `v0.0.45`), and the sync workflow is
+> disabled. It may return if there is interest; say so in the
+> [discussion](https://github.com/pingdotgg/t3code/discussions/11744).
+
 This fork publishes two tested branches with the same automatic title feature:
 [`fork/stable`](https://github.com/alcxyz/t3code/tree/fork/stable) follows the
 latest published upstream stable release, and
@@ -26,8 +32,8 @@ the regeneration indicator from
 The feature targets upstream's V2 orchestrator. Until an upstream stable
 release includes V2, `fork/stable` stays at its last V1 build.
 
-The [sync workflow](https://github.com/alcxyz/t3code/actions/workflows/fork-sync.yml)
-runs four times a day and checks published upstream release tags separately for stable and nightly. It
+While it was enabled, the [sync workflow](https://github.com/alcxyz/t3code/actions/workflows/fork-sync.yml)
+ran four times a day and checked published upstream release tags separately for stable and nightly. It
 applies the title feature to each release and advances a channel branch only
 after typechecks, title tests, and the desktop build pass. A channel skips work
 when its release and feature commit have not changed. Conflicts or failed
@@ -43,6 +49,3 @@ feature revision used to build it. Upstream release and deployment workflows
 are disabled in this fork.
 
 [Discussion and feedback](https://github.com/pingdotgg/t3code/discussions/11744)
-
-Our Nix packaging selects a pinned channel commit. The quota-recovery patch
-is not part of this title feature.
